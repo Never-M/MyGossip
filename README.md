@@ -1,4 +1,4 @@
-# MyGossip
+# My Gossip DB
 
 From smartphones, IoTs for homes and smart cities, we generate enormous amounts of data while constantly accessing services on the internet. These cloud-enabled services often consider connected devices as edges and need them to be in sync. Therefore, we need ways to support distributed systems that are highly fault-tolerant and available while abiding limited connectivity and resources.
 
