@@ -16,6 +16,6 @@ func (g *gossiper) RemovePeer(name string)  {
 	delete(g.peers, name)
 }
 
-func (g *gossiper) GetPeerNames() {
+func (g *gossiper) PrintPeerNames() {
 	fmt.Println(g.peers)
 }
