@@ -1,0 +1,43 @@
+version: '3.4'
+
+services:
+  node1:
+    build: .
+    container_name: node1
+    hostname: node1
+    privileged: true
+    environment:
+      USER: root
+    expose:
+      - "8001"
+    volumes:
+      - .:/root/project
+    networks:
+      gossiper-net:
+        ipv4_address: 172.28.1.1
+    tty: true
+    entrypoint: sh
+
+  node2:
+    build: .
+    container_name: node2
+    hostname: node2
+    privileged: true
+    environment:
+      USER: root
+    expose:
+      - "8001"
+    volumes:
+      - .:/root/project
+    networks:
+      gossiper-net:
+        ipv4_address: 172.28.1.2
+    tty: true
+    entrypoint: sh
+
+networks:
+  gossiper-net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
