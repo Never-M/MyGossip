@@ -11,21 +11,22 @@ import (
 
 // Time formatter
 var timeFormat = "2006-01-02 15:04:05"
+
 const HEARTBEAT_PORT = ":9000"
 const HEARTBEAT_CTXKEY = "heartbeat"
 const DB_BASE_PATH = "/tmp/"
 
 type gossiper struct {
-	name	string
-	ip		string
-	peers	map[string]*gossiper
-	client  *http.Client
-	db 		*mydb
+	name   string
+	ip     string
+	peers  map[string]*gossiper
+	client *http.Client
+	db     *mydb
 }
 
 type heartBeat struct {
-	gossiperName	string
-	currentTime		time.Time
+	gossiperName string
+	currentTime  time.Time
 }
 
 func NewGossiper(name, address string) *gossiper {
@@ -82,7 +83,7 @@ func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
 func (g *gossiper) SendHeartBeat() int {
 	ctx := context.WithValue(context.Background(), HEARTBEAT_CTXKEY, &heartBeat{g.name, time.Now()})
 	for _, peer := range g.peers {
-		req, err := http.NewRequest("GET", "http://" + peer.ip + HEARTBEAT_PORT +"/" + HEARTBEAT_CTXKEY, nil)
+		req, err := http.NewRequest("GET", "http://"+peer.ip+HEARTBEAT_PORT+"/"+HEARTBEAT_CTXKEY, nil)
 		req = req.WithContext(ctx)
 		if err != nil {
 			log.Println(err)
@@ -103,10 +104,10 @@ func (g *gossiper) HeartBeatReceiver() {
 	// maybe the host doesn't need context
 	//contextedMux := g.HeartBeatContext(mux)
 	server := &http.Server{
-		Addr: HEARTBEAT_PORT,
-		ReadTimeout: 60 * time.Second,
+		Addr:         HEARTBEAT_PORT,
+		ReadTimeout:  60 * time.Second,
 		WriteTimeout: 60 * time.Second,
-		Handler: mux,
+		Handler:      mux,
 	}
 	log.Println("Start server on " + g.ip + HEARTBEAT_PORT)
 	server.ListenAndServe()
