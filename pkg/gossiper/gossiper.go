@@ -1,13 +1,14 @@
 package gossiper
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
-	"github/Never-M/MyGossip/pkg/types"
+	"github.com/Never-M/MyGossip/pkg/types"
 )
 
 // Time formatter
@@ -29,10 +30,6 @@ type heartBeat struct {
 }
 
 func NewGossiper(name, address string) *gossiper {
-	var rc int
-	if rc != types.SUCCEED {
-
-	}
 	return &gossiper{
 		name:   name,
 		ip:     address,
@@ -59,10 +56,12 @@ func (g *gossiper) PrintPeerNames() {
 }
 
 func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("Request Context: %+v",r)
-	hb := r.Context().Value(HEARTBEAT_CTXKEY)
-	hbStr := fmt.Sprint(hb)
-	log.Println(hbStr)
+	formData := make(map[string]interface{})
+	json.NewDecoder(r.Body).Decode(&formData)
+	for key,value := range formData{
+		log.Println("key:",key," => value :",value)
+	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(r.Host))
 
@@ -71,29 +70,14 @@ func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
 	//TODO
 }
 
-// maybe the host doesn't need context
-//func (g *gossiper) HeartBeatContext(next http.Handler) http.Handler {
-//	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-//		ctx := context.WithValue(r.Context(), HEARTBEAT_CTXKEY, heartBeat{g.name, time.Now()})
-//		next.ServeHTTP(w, r.WithContext(ctx))
-//	})
-//}
-
 func (g *gossiper) SendHeartBeat() (int, error) {
-	ctx := context.WithValue(context.Background(), HEARTBEAT_CTXKEY, &heartBeat{g.name, time.Now()})
 	for _, peer := range g.peers {
-		req, err := http.NewRequest("GET", "http://"+peer.ip+HEARTBEAT_PORT+"/"+HEARTBEAT_CTXKEY, nil)
+		req, err := http.NewRequest("POST", "http://"+peer.ip+HEARTBEAT_PORT+"/"+HEARTBEAT_CTXKEY, strings.NewReader("name=" + g.name + "&ip=" + g.ip))
 		if err != nil {
-			return types.FAIL, err
+			return types.HEARTBEAT_RESPONSE_ERROR, err
 		}
-		newReq := req.WithContext(ctx)
+		_, err = g.client.Do(req)
 		if err != nil {
-			log.Println(err)
-			return types.HEARTBEAT_REQUEST_ERROR, err
-		}
-		_, err = g.client.Do(newReq)
-		if err != nil {
-			log.Println(err)
 			return types.HEARTBEAT_RESPONSE_ERROR, err
 		}
 	}
@@ -103,8 +87,6 @@ func (g *gossiper) SendHeartBeat() (int, error) {
 func (g *gossiper) HeartBeatReceiver() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/heartbeat", g.HeartBeatHandler)
-	// maybe the host doesn't need context
-	//contextedMux := g.HeartBeatContext(mux)
 	server := &http.Server{
 		Addr:         HEARTBEAT_PORT,
 		ReadTimeout:  60 * time.Second,
