@@ -15,6 +15,7 @@ type pair struct {
 	val string
 }
 
+//how to use return &mydb{} method？
 func newdb(path string) (int, *mydb) {
 	newdb := &mydb{}
 	newdb.path = path

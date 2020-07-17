@@ -10,9 +10,7 @@ type mylog struct {
 }
 
 func newlog() *mylog {
-	newlog := &mylog{}
-	newlog.log = logrus.New()
-	return newlog
+	return &mylog{log: logrus.New()}
 }
 
 //hint and content can be ignored
@@ -74,6 +72,7 @@ func (ml *mylog) savetofile(path, filename string) {
 	}
 }
 
-func (ml *mylog) backtodefault() {
+//transfer to default from save to file
+func (ml *mylog) defaultset() {
 	ml.log.Out = os.Stderr
 }
