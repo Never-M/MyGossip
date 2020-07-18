@@ -55,11 +55,6 @@ func (g *gossiper) PrintPeerNames() {
 }
 
 func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
-	// formData := make(map[string]interface{})
-	// json.NewDecoder(r.Body).Decode(&formData)
-	// for key,value := range formData{
-	// 	log.Println("key:",key," => value :",value)
-	// }
 	body, _ := ioutil.ReadAll(r.Body)
 	fmt.Println("Got the request!")
 	fmt.Println("request Body:", string(body))
@@ -69,15 +64,8 @@ func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
 	//TODO
 }
 
-// maybe delete this later
-// type HeartBeatBody struct {
-// 	name string
-// 	ip   string
-// }
-
 func (g *gossiper) SendHeartBeat() (int, error) {
 	for _, peer := range g.peers {
-		//hbb := HeartBeatBody{name: g.name, ip: g.ip}
 		var jsonStr = []byte(`{"name":` + g.name + `, "ip" :` + g.ip + `}`)
 		url := "http://" + peer.ip + HEARTBEAT_PORT + "/" + HEARTBEAT_PATH
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))

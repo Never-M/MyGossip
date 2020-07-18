@@ -9,12 +9,12 @@ type mylog struct {
 	log *logrus.Logger
 }
 
-func newlog() *mylog {
+func Newlog() *mylog {
 	return &mylog{log: logrus.New()}
 }
 
 //hint and content can be ignored
-func (ml *mylog) info(msg, hint string, content ...string) {
+func (ml *mylog) Info(msg, hint string, content ...string) {
 	if content != nil {
 		ml.log.WithFields(logrus.Fields{hint: content}).Info(msg)
 	} else {
@@ -22,7 +22,7 @@ func (ml *mylog) info(msg, hint string, content ...string) {
 	}
 }
 
-func (ml *mylog) debug(msg, hint string, content ...string) {
+func (ml *mylog) Debug(msg, hint string, content ...string) {
 	if content != nil {
 		ml.log.WithFields(logrus.Fields{hint: content}).Debug(msg)
 	} else {
@@ -30,7 +30,7 @@ func (ml *mylog) debug(msg, hint string, content ...string) {
 	}
 }
 
-func (ml *mylog) warn(msg, hint string, content ...string) {
+func (ml *mylog) Warn(msg, hint string, content ...string) {
 	if content != nil {
 		ml.log.WithFields(logrus.Fields{hint: content}).Warn(msg)
 	} else {
@@ -38,7 +38,7 @@ func (ml *mylog) warn(msg, hint string, content ...string) {
 	}
 }
 
-func (ml *mylog) error(msg, hint string, content ...string) {
+func (ml *mylog) Error(msg, hint string, content ...string) {
 	if content != nil {
 		ml.log.WithFields(logrus.Fields{hint: content}).Error(msg)
 	} else {
@@ -46,7 +46,7 @@ func (ml *mylog) error(msg, hint string, content ...string) {
 	}
 }
 
-func (ml *mylog) fatal(msg, hint string, content ...string) {
+func (ml *mylog) Fatal(msg, hint string, content ...string) {
 	if content != nil {
 		ml.log.WithFields(logrus.Fields{hint: content}).Fatal(msg)
 	} else {
@@ -54,7 +54,7 @@ func (ml *mylog) fatal(msg, hint string, content ...string) {
 	}
 }
 
-func (ml *mylog) panic(msg, hint string, content ...string) {
+func (ml *mylog) Panic(msg, hint string, content ...string) {
 	if content != nil {
 		ml.log.WithFields(logrus.Fields{hint: content}).Panic(msg)
 	} else {
@@ -62,7 +62,7 @@ func (ml *mylog) panic(msg, hint string, content ...string) {
 	}
 }
 
-func (ml *mylog) savetofile(path, filename string) {
+func (ml *mylog) SaveToFile(path, filename string) {
 	ml.log.Out = os.Stdout
 	file, err := os.OpenFile(path+filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err == nil {
@@ -73,6 +73,6 @@ func (ml *mylog) savetofile(path, filename string) {
 }
 
 //transfer to default from save to file
-func (ml *mylog) defaultset() {
+func (ml *mylog) Defaultset() {
 	ml.log.Out = os.Stderr
 }
