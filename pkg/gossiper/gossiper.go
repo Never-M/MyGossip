@@ -62,7 +62,7 @@ func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
 	// }
 	body, _ := ioutil.ReadAll(r.Body)
 	fmt.Println("Got the request!")
-	fmt.Println("response Body:", string(body))
+	fmt.Println("request Body:", string(body))
 
 	//incomingPeerIP := r.Host
 	//TODO: incoming heartbeat should be recorded. unknown hosts should be added to peer list.
@@ -86,12 +86,12 @@ func (g *gossiper) SendHeartBeat() (int, error) {
 
 		client := &http.Client{}
 		resp, err := client.Do(req)
+		fmt.Println("Response Status:", resp.Status)
 		if err != nil {
 			panic(err)
 		}
 		defer resp.Body.Close()
 
-		fmt.Println("send request Status:", resp.Status)
 		// fmt.Println("response Headers:", resp.Header)
 		// fmt.Println("send request...")
 		// body, _ := ioutil.ReadAll(resp.Body)
