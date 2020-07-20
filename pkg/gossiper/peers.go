@@ -11,3 +11,10 @@ func NewPeer(name, ip string) *peer {
 		ip:ip,
 	}
 }
+
+func NewPeerFromGossiper(g *gossiper) *peer {
+	return &peer{
+		name:g.name,
+		ip:g.ip,
+	}
+}
