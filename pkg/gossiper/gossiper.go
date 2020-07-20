@@ -2,6 +2,7 @@ package gossiper
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/Never-M/MyGossip/pkg/types"
 	"io/ioutil"
@@ -24,8 +25,9 @@ type gossiper struct {
 }
 
 type heartBeat struct {
-	gossiperName string
-	currentTime  time.Time
+	Name string    	`json:"name"`
+	Ip   string    	`json:"ip"`
+	Time string		`json:"time"`
 }
 
 func NewGossiper(name, address string) *gossiper {
@@ -33,7 +35,6 @@ func NewGossiper(name, address string) *gossiper {
 		name:   name,
 		ip:     address,
 		peers:  make(map[string]*peer),
-		client: &http.Client{},
 	}
 }
 
@@ -55,35 +56,44 @@ func (g *gossiper) PrintPeerNames() {
 }
 
 func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
+	// Decode heartbeat json
 	body, _ := ioutil.ReadAll(r.Body)
-	fmt.Println("Got the request!")
-	fmt.Println("request Body:", string(body))
+	defer r.Body.Close()
+	hb := &heartBeat{}
+	err := json.Unmarshal(body, hb)
+	if err != nil {
+		panic(err)
+	}
 
-	//incomingPeerIP := r.Host
-	//TODO: incoming heartbeat should be recorded. unknown hosts should be added to peer list.
-	//TODO
+	// check node in the peers list or not
+	if _, ok := g.peers[hb.Name]; !ok {
+		g.peers[hb.Name] = NewPeer(hb.Name, hb.Ip)
+	} else {
+		//TODO receive heartbeat
+	}
 }
 
 func (g *gossiper) SendHeartBeat() (int, error) {
 	for _, peer := range g.peers {
-		var jsonStr = []byte(`{"name":` + g.name + `, "ip" :` + g.ip + `}`)
-		url := "http://" + peer.ip + HEARTBEAT_PORT + "/" + HEARTBEAT_PATH
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-		req.Header.Set("X-Custom-Header", "myvalue")
-		req.Header.Set("Content-Type", "application/json")
-
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		fmt.Println("Response Status:", resp.Status)
-		if err != nil {
-			panic(err)
+		// encode heartbeat to json
+		hb := &heartBeat{
+			g.name,
+			g.ip,
+			time.Now().Format(timeFormat),
 		}
-		defer resp.Body.Close()
-
-		// fmt.Println("response Headers:", resp.Header)
-		// fmt.Println("send request...")
-		// body, _ := ioutil.ReadAll(resp.Body)
-		// fmt.Println("response Body:", string(body))
+		hbJson, err := json.Marshal(hb)
+		if err != nil {
+			return types.FAILED, err
+		}
+		body := bytes.NewBuffer(hbJson)
+		// url
+		url := "http://" + peer.ip + HEARTBEAT_PORT + "/" + HEARTBEAT_PATH
+		//send request
+		resp, err := http.Post(url, "application/json;charset=utf-8", body)
+		if err != nil {
+			return types.HEARTBEAT_RESPONSE_ERROR, err
+		}
+		resp.Body.Close()
 	}
 	return types.SUCCEED, nil
 }
@@ -102,5 +112,5 @@ func (g *gossiper) HeartBeatReceiver() {
 }
 
 func (hb heartBeat) String() string {
-	return "HeartBeat back from: " + hb.gossiperName + ", at " + hb.currentTime.Format(timeFormat)
+	return "HeartBeat back from: " + hb.Name + ", at " + hb.Time
 }
