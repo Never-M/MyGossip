@@ -6,9 +6,9 @@ import (
 )
 
 type mydb struct {
-	path    string
-	db      *leveldb.DB
-	mybatch *mybatch
+	path  string
+	db    *leveldb.DB
+	batch *batch
 }
 
 type pair struct {
@@ -16,43 +16,43 @@ type pair struct {
 	val string
 }
 
-func Newdb(path string) (int, *mydb) {
-	newdb := &mydb{}
-	newdb.path = path
-	var err error
-	newdb.db, err = leveldb.OpenFile(newdb.path, nil)
-	newdb.mybatch = NewBatch()
+func Newdb(path string) (int, error, *mydb) {
+	db, err := leveldb.OpenFile(path, nil)
 	if err != nil {
-		return DB_CREATE_ERROR, nil
+		return DB_CREATE_ERROR, err, nil
 	}
-	return SUCCEED, newdb
+	return SUCCEED, nil, &mydb{
+		path:  path,
+		db:    db,
+		batch: &batch{},
+	}
 }
 
-func (d *mydb) Add(key, val string) int {
+func (d *mydb) Add(key, val string) (int, error) {
 	err := d.db.Put([]byte(key), []byte(val), nil)
 	if err != nil {
-		return DB_PUT_ERROR
+		return DB_PUT_ERROR, err
 	}
-	return SUCCEED
+	return SUCCEED, nil
 }
 
-func (d *mydb) Obtain(key string) (int, string) {
+func (d *mydb) Obtain(key string) (int, string, error) {
 	data, err := d.db.Get([]byte(key), nil)
 	if err != nil {
-		return DB_GET_ERROR, ""
+		return DB_GET_ERROR, "", err
 	}
-	return SUCCEED, string(data)
+	return SUCCEED, string(data), nil
 }
 
-func (d *mydb) Remove(key string) int {
+func (d *mydb) Remove(key string) (int, error) {
 	err := d.db.Delete([]byte(key), nil)
 	if err != nil {
-		return DB_DELETE_ERROR
+		return DB_DELETE_ERROR, err
 	}
-	return SUCCEED
+	return SUCCEED, nil
 }
 
-func (d *mydb) ListData() (int, []pair) {
+func (d *mydb) ListData() (int, []pair, error) {
 	iter := d.db.NewIterator(nil, nil)
 	var ans []pair
 
@@ -64,37 +64,31 @@ func (d *mydb) ListData() (int, []pair) {
 	iter.Release()
 	err := iter.Error()
 	if err != nil {
-		return DB_DELETE_ERROR, nil
+		return DB_DELETE_ERROR, nil, err
 	}
-	return SUCCEED, ans
+	return SUCCEED, ans, nil
 }
 
-type mybatch struct {
-	batch *leveldb.Batch
+type batch struct {
+	leveldb.Batch
 }
 
-func NewBatch() *mybatch {
-	return &mybatch{
-		batch: new(leveldb.Batch),
+func (b *batch) Set(keyval []pair) {
+	for i := 0; i < len(keyval); i++ {
+		b.Put([]byte(keyval[i].key), []byte(keyval[i].val))
 	}
 }
 
-func (mb *mybatch) Set(keys, vals []string) {
+func (b *batch) Remove(keys []string) {
 	for i := 0; i < len(keys); i++ {
-		mb.batch.Put([]byte(keys[i]), []byte(vals[i]))
+		b.Delete([]byte(keys[i]))
 	}
 }
 
-func (mb *mybatch) Remove(keys []string) {
-	for i := 0; i < len(keys); i++ {
-		mb.batch.Delete([]byte(keys[i]))
-	}
-}
-
-func (d *mydb) WriteDown(mybatch *leveldb.Batch) int {
+func (d *mydb) Commit(mybatch *leveldb.Batch) (int, error) {
 	err := d.db.Write(mybatch, nil)
 	if err != nil {
-		return DB_BATCHWRITE_ERROR
+		return DB_BATCHWRITE_ERROR, err
 	}
-	return SUCCEED
+	return SUCCEED, nil
 }

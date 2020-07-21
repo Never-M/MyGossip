@@ -22,19 +22,26 @@ type gossiper struct {
 	ip     string
 	peers  map[string]*peer
 	client *http.Client
+	db     *mydb
 }
 
 type heartBeat struct {
-	Name string    	`json:"name"`
-	Ip   string    	`json:"ip"`
-	Time string		`json:"time"`
+	Name string `json:"name"`
+	Ip   string `json:"ip"`
+	Time string `json:"time"`
 }
 
 func NewGossiper(name, address string) *gossiper {
+	_, err, db := Newdb("tmp/db")
+	if err != nil {
+		//TODO: Using logrus later
+		log.Fatal("Create database Failed")
+	}
 	return &gossiper{
-		name:   name,
-		ip:     address,
-		peers:  make(map[string]*peer),
+		name:  name,
+		ip:    address,
+		peers: make(map[string]*peer),
+		db:    db,
 	}
 }
 
