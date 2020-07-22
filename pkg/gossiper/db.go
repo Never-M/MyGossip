@@ -8,7 +8,7 @@ import (
 type mydb struct {
 	path  string
 	db    *leveldb.DB
-	batch *batch
+	batch *leveldb.Batch
 }
 
 type pair struct {
@@ -24,7 +24,7 @@ func Newdb(path string) (int, error, *mydb) {
 	return SUCCEED, nil, &mydb{
 		path:  path,
 		db:    db,
-		batch: &batch{},
+		batch: new(leveldb.Batch),
 	}
 }
 
@@ -69,24 +69,20 @@ func (d *mydb) ListData() (int, []pair, error) {
 	return SUCCEED, ans, nil
 }
 
-type batch struct {
-	leveldb.Batch
-}
-
-func (b *batch) Set(keyval []pair) {
+func (d *mydb) BatchSet(keyval []pair) {
 	for i := 0; i < len(keyval); i++ {
-		b.Put([]byte(keyval[i].key), []byte(keyval[i].val))
+		d.batch.Put([]byte(keyval[i].key), []byte(keyval[i].val))
 	}
 }
 
-func (b *batch) Remove(keys []string) {
+func (d *mydb) BatchRemove(keys []string) {
 	for i := 0; i < len(keys); i++ {
-		b.Delete([]byte(keys[i]))
+		d.batch.Delete([]byte(keys[i]))
 	}
 }
 
-func (d *mydb) Commit(mybatch *leveldb.Batch) (int, error) {
-	err := d.db.Write(mybatch, nil)
+func (d *mydb) Commit() (int, error) {
+	err := d.db.Write(d.batch, nil)
 	if err != nil {
 		return DB_BATCHWRITE_ERROR, err
 	}
