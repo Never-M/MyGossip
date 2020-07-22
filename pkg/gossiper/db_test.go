@@ -7,36 +7,42 @@ import (
 )
 
 func TestDBAddDelete(t *testing.T) {
-	resultCode, mydb := Newdb("/tmp/test")
+	resultCode, mydb, _ := Newdb("/tmp/test")
 	assert.Equal(t, types.SUCCEED, resultCode, "Create Database Failed")
-	resultCode = mydb.Add("hello", "world")
-	assert.Equal(t, types.SUCCEED, resultCode, "Database Add Failed")
-	resultCode, val := mydb.Obtain("hello")
-	assert.Equal(t, types.SUCCEED, resultCode, "Can't Obtain key")
-	assert.Equal(t, "world", val, "Database Obtain Failed")
-	resultCode = mydb.Remove("hello")
-	assert.Equal(t, types.SUCCEED, resultCode, "Remove Failed")
-	resultCode, val = mydb.Obtain("hello")
-	assert.Equal(t, types.DB_GET_ERROR, resultCode, "Remove Failed")
+	resultCode, _ = mydb.Put("hello", "world")
+	assert.Equal(t, types.SUCCEED, resultCode, "Database Put Failed")
+	resultCode, val, _ := mydb.Get("hello")
+	assert.Equal(t, types.SUCCEED, resultCode, "Can't Get key")
+	assert.Equal(t, "world", val, "Database Get Failed")
+	resultCode, _ = mydb.Delete("hello")
+	assert.Equal(t, types.SUCCEED, resultCode, "Delete Failed")
+	resultCode, val, _ = mydb.Get("hello")
+	assert.Equal(t, types.DB_GET_ERROR, resultCode, "Get Failed")
+	//every test case has a Close, deleting it later
+	mydb.Close()
 }
 
 func TestListData(t *testing.T) {
-	resultCode, mydb := Newdb("/tmp/test1")
+	resultCode, mydb, _ := Newdb("/tmp/test1")
 	assert.Equal(t, types.SUCCEED, resultCode, "Create Database Failed")
-	resultCode = mydb.Add("hello", "world")
-	assert.Equal(t, types.SUCCEED, resultCode, "Database Add Failed")
-	resultCode = mydb.Add("good", "day")
-	assert.Equal(t, types.SUCCEED, resultCode, "Database Add Failed")
-	resultCode, res := mydb.ListData()
+	resultCode, _ = mydb.Put("hello", "world")
+	assert.Equal(t, types.SUCCEED, resultCode, "Database Put Failed")
+	resultCode, _ = mydb.Put("good", "day")
+	assert.Equal(t, types.SUCCEED, resultCode, "Database Put Failed")
+	resultCode, res, _ := mydb.ListData()
 	assert.Equal(t, types.SUCCEED, resultCode, "Database listData Failed")
 	assert.Equal(t, len(res), 2, "ListData Failed")
+	//every test case has a Close, deleting it later
+	mydb.Close()
 }
 
 func TestBatch(t *testing.T) {
-	resultCode, mydb := Newdb("/tmp/test2")
+	resultCode, mydb, _ := Newdb("/tmp/test2")
 	assert.Equal(t, types.SUCCEED, resultCode, "Create Database Failed")
-	mydb.mybatch.Set([]string{"hello", "good"}, []string{"world", "day"})
-	mydb.mybatch.Remove([]string{"hello"})
-	resultCode = mydb.WriteDown(mydb.mybatch.batch)
-	assert.Equal(t, types.SUCCEED, resultCode, "Batch Write Failed")
+	mydb.BatchPut([]pair{NewPair("hello", "world"), NewPair("good", "morning")})
+	mydb.BatchDelete([]string{"hello"})
+	resultCode, _ = mydb.Commit()
+	assert.Equal(t, types.SUCCEED, resultCode, "Batch Commit Failed")
+	//every test case has a Close, deleting it later
+	mydb.Close()
 }

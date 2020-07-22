@@ -32,10 +32,11 @@ type heartBeat struct {
 }
 
 func NewGossiper(name, address string) *gossiper {
-	_, err, db := Newdb("tmp/db")
+	_, db, err := Newdb("/tmp/" + name + "/database")
 	if err != nil {
 		//TODO: Using logrus later
-		log.Fatal("Create database Failed")
+		fmt.Println(err)
+		log.Fatal("database Failed")
 	}
 	return &gossiper{
 		name:  name,

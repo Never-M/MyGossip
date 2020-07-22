@@ -16,19 +16,23 @@ type pair struct {
 	val string
 }
 
-func Newdb(path string) (int, error, *mydb) {
+func NewPair(key, val string) pair {
+	return pair{key: key, val: val}
+}
+
+func Newdb(path string) (int, *mydb, error) {
 	db, err := leveldb.OpenFile(path, nil)
 	if err != nil {
-		return DB_CREATE_ERROR, err, nil
+		return DB_CREATE_ERROR, nil, err
 	}
-	return SUCCEED, nil, &mydb{
+	return SUCCEED, &mydb{
 		path:  path,
 		db:    db,
 		batch: new(leveldb.Batch),
-	}
+	}, nil
 }
 
-func (d *mydb) Add(key, val string) (int, error) {
+func (d *mydb) Put(key, val string) (int, error) {
 	err := d.db.Put([]byte(key), []byte(val), nil)
 	if err != nil {
 		return DB_PUT_ERROR, err
@@ -36,7 +40,7 @@ func (d *mydb) Add(key, val string) (int, error) {
 	return SUCCEED, nil
 }
 
-func (d *mydb) Obtain(key string) (int, string, error) {
+func (d *mydb) Get(key string) (int, string, error) {
 	data, err := d.db.Get([]byte(key), nil)
 	if err != nil {
 		return DB_GET_ERROR, "", err
@@ -44,12 +48,16 @@ func (d *mydb) Obtain(key string) (int, string, error) {
 	return SUCCEED, string(data), nil
 }
 
-func (d *mydb) Remove(key string) (int, error) {
+func (d *mydb) Delete(key string) (int, error) {
 	err := d.db.Delete([]byte(key), nil)
 	if err != nil {
 		return DB_DELETE_ERROR, err
 	}
 	return SUCCEED, nil
+}
+
+func (d *mydb) Close() {
+	d.db.Close()
 }
 
 func (d *mydb) ListData() (int, []pair, error) {
@@ -69,13 +77,13 @@ func (d *mydb) ListData() (int, []pair, error) {
 	return SUCCEED, ans, nil
 }
 
-func (d *mydb) BatchSet(keyval []pair) {
+func (d *mydb) BatchPut(keyval []pair) {
 	for i := 0; i < len(keyval); i++ {
 		d.batch.Put([]byte(keyval[i].key), []byte(keyval[i].val))
 	}
 }
 
-func (d *mydb) BatchRemove(keys []string) {
+func (d *mydb) BatchDelete(keys []string) {
 	for i := 0; i < len(keys); i++ {
 		d.batch.Delete([]byte(keys[i]))
 	}
