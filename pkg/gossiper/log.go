@@ -62,9 +62,9 @@ func (ml *mylog) Panic(msg, hint string, content ...string) {
 	}
 }
 
-func (ml *mylog) SaveToFile(path, filename string) {
+func (ml *mylog) SaveToFile(path string) {
 	ml.log.Out = os.Stdout
-	file, err := os.OpenFile(path+filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err == nil {
 		ml.log.Out = file
 	} else {

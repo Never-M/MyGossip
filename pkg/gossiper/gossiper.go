@@ -23,6 +23,7 @@ type gossiper struct {
 	peers  map[string]*peer
 	client *http.Client
 	db     *mydb
+	log    *mylog
 }
 
 type heartBeat struct {
@@ -33,6 +34,8 @@ type heartBeat struct {
 
 func NewGossiper(name, address string) *gossiper {
 	_, db, err := Newdb("/tmp/" + name + "/database")
+	mylog := Newlog()
+	mylog.SaveToFile("/tmp/" + name + "/log")
 	if err != nil {
 		//TODO: Using logrus later
 		fmt.Println(err)
@@ -43,6 +46,7 @@ func NewGossiper(name, address string) *gossiper {
 		ip:    address,
 		peers: make(map[string]*peer),
 		db:    db,
+		log:   mylog,
 	}
 }
 
