@@ -14,7 +14,9 @@ func TestAddRemovePeer(t *testing.T)  {
 	assert.Equal(t,types.SUCCEED, resultCode, "Add peer failed")
 
 	resultCode = g.RemovePeer("node2")
-	assert.Equal(t,types.SUCCEED, resultCode, "Remove peer failed")
+	assert.Equal(t, types.SUCCEED, resultCode, "Remove peer failed")
+	//every test case has a Close, deleting it later
+	g.db.Close()
 }
 
 func TestSendSingleHeartBeat(t *testing.T)  {
@@ -26,6 +28,9 @@ func TestSendSingleHeartBeat(t *testing.T)  {
 	resultCode,err := node1.SendHeartBeat(peer2)
 	assert.NoError(t,err)
 	assert.Equal(t, types.SUCCEED, resultCode, "Send heartbeat failed")
+	//every test case has a Close, deleting it later
+	node1.db.Close()
+	node2.db.Close()
 }
 
 func TestNodeStartStop(t *testing.T)  {
