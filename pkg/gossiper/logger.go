@@ -18,7 +18,7 @@ func (ml *logger) Info(msg ...string) {
 	if len(msg) != 1 {
 		ml.log.WithFields(logrus.Fields{msg[1]: msg[2]}).Info(msg[0])
 	} else {
-		ml.log.Fatal(msg[0])
+		ml.log.Info(msg[0])
 	}
 }
 
@@ -26,7 +26,7 @@ func (ml *logger) Debug(msg ...string) {
 	if len(msg) != 1 {
 		ml.log.WithFields(logrus.Fields{msg[1]: msg[2]}).Debug(msg[0])
 	} else {
-		ml.log.Fatal(msg[0])
+		ml.log.Debug(msg[0])
 	}
 }
 
@@ -34,7 +34,7 @@ func (ml *logger) Warn(msg ...string) {
 	if len(msg) != 1 {
 		ml.log.WithFields(logrus.Fields{msg[1]: msg[2]}).Warn(msg[0])
 	} else {
-		ml.log.Fatal(msg[0])
+		ml.log.Warn(msg[0])
 	}
 }
 
@@ -42,7 +42,7 @@ func (ml *logger) Error(msg ...string) {
 	if len(msg) != 1 {
 		ml.log.WithFields(logrus.Fields{msg[1]: msg[2]}).Error(msg[0])
 	} else {
-		ml.log.Fatal(msg[0])
+		ml.log.Error(msg[0])
 	}
 }
 
@@ -58,7 +58,7 @@ func (ml *logger) Panic(msg ...string) {
 	if len(msg) != 1 {
 		ml.log.WithFields(logrus.Fields{msg[1]: msg[2]}).Panic(msg[0])
 	} else {
-		ml.log.Fatal(msg[0])
+		ml.log.Panic(msg[0])
 	}
 }
 
