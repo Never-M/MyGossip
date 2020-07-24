@@ -54,7 +54,7 @@ func NewGossiper(name, ip string) *gossiper {
 func (g *gossiper) Start()  {
 	go g.HeartBeatReceiver()
 	g.heartbeatTimer = time.NewTimer(HEARTBEAT_TIMEOUT * time.Millisecond)
-	g.logger.Info("%v start", g.name)
+	g.logger.Info(g.name + " started")
 	go func() {
 		for {
 			select {
@@ -62,7 +62,7 @@ func (g *gossiper) Start()  {
 				g.SendHeartBeats()
 				g.heartbeatTimer.Reset(HEARTBEAT_TIMEOUT * time.Millisecond)
 			case <-g.terminateChan:
-				g.logger.Info("%v stoped", g.name)
+				g.logger.Info(g.name + " stoped")
 				break
 			}
 		}
