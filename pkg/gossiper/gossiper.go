@@ -7,6 +7,7 @@ import (
 	"github.com/Never-M/MyGossip/pkg/types"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -18,13 +19,13 @@ const HEARTBEAT_PATH = "heartbeat"
 const HEARTBEAT_TIMEOUT = 1000
 
 type gossiper struct {
-	name   string
-	ip     string
-	peers  map[string]*peer
+	name           string
+	ip             string
+	peers          map[string]*peer
 	heartbeatTimer *time.Timer
-	terminateChan chan int
-	db     *mydb
-	logger *logger
+	terminateChan  chan int
+	db             *mydb
+	logger         *logger
 }
 
 type heartBeat struct {
@@ -42,16 +43,35 @@ func NewGossiper(name, ip string) *gossiper {
 		logger.Fatal("create database Failed", "gossiper", "NewGossiper")
 	}
 	return &gossiper{
-		name:   name,
-		ip:     ip,
-		peers:  make(map[string]*peer),
-		terminateChan:make(chan int),
-		db:     db,
-		logger: logger,
+		name:          name,
+		ip:            ip,
+		peers:         make(map[string]*peer),
+		terminateChan: make(chan int),
+		db:            db,
+		logger:        logger,
 	}
 }
 
-func (g *gossiper) Start()  {
+func (g *gossiper) Write() {
+	var s string
+	for k := range g.peers {
+		s += k
+		s += ","
+	}
+	data := []byte(s[:len(s)-1])
+	ioutil.WriteFile("/tmp/"+g.name+"/peers.txt", data, 0666)
+}
+
+func (g *gossiper) Read() []string {
+	bytes, ok := ioutil.ReadFile("/tmp/" + g.name + "peers.txt")
+	if ok != nil {
+		fmt.Println("read failed")
+	}
+	peers := strings.Split(string(bytes), ",")
+	return peers
+}
+
+func (g *gossiper) Start() {
 	go g.HeartBeatReceiver()
 	g.heartbeatTimer = time.NewTimer(HEARTBEAT_TIMEOUT * time.Millisecond)
 	g.logger.Info(g.name + " started")
@@ -69,7 +89,7 @@ func (g *gossiper) Start()  {
 	}()
 }
 
-func (g *gossiper) Stop()  {
+func (g *gossiper) Stop() {
 	g.terminateChan <- 1
 }
 
@@ -140,7 +160,7 @@ func (g *gossiper) SendHeartBeat(p *peer) (int, error) {
 	}
 	hbJson, err := json.Marshal(hb)
 	if err != nil {
-		g.logger.Error(g.name + " json marshal failed", "gossiper", "SendHeartBeat")
+		g.logger.Error(g.name+" json marshal failed", "gossiper", "SendHeartBeat")
 		return types.FAILED, err
 	}
 	body := bytes.NewBuffer(hbJson)
@@ -149,7 +169,7 @@ func (g *gossiper) SendHeartBeat(p *peer) (int, error) {
 	//send request
 	resp, err := http.Post(url, "application/json;charset=utf-8", body)
 	if err != nil {
-		g.logger.Error(g.name + " send heartbeat to " + p.name + " response error", "gossiper", "SendHeartBeat")
+		g.logger.Error(g.name+" send heartbeat to "+p.name+" response error", "gossiper", "SendHeartBeat")
 		return types.HEARTBEAT_RESPONSE_ERROR, err
 	}
 	resp.Body.Close()
