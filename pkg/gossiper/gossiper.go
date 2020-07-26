@@ -20,13 +20,13 @@ const HEARTBEAT_PATH = "heartbeat"
 const HEARTBEAT_TIMEOUT = 1000
 
 type gossiper struct {
-	name           string
-	ip             string
-	peers          map[string]*peer
-	heartbeatTimer *time.Timer
-	terminateChan  chan int
-	db             *mydb
-	logger         *logger
+	Name           string
+	IP             string
+	Peers          map[string]*peer
+	HeartbeatTimer *time.Timer
+	TerminateChan  chan int
+	DB             *mydb
+	Logger         *logger
 }
 
 type heartBeat struct {
@@ -56,12 +56,12 @@ func NewGossiper(name, ip string) *gossiper {
 		}
 	}
 	return &gossiper{
-		name:          name,
-		ip:            ip,
-		peers:         peers,
-		terminateChan: make(chan int),
-		db:            db,
-		logger:        logger,
+		Name:          name,
+		IP:            ip,
+		Peers:         peers,
+		TerminateChan: make(chan int),
+		DB:            db,
+		Logger:        logger,
 	}
 }
 
@@ -72,13 +72,13 @@ type PeerPair struct {
 
 func (g *gossiper) Write() {
 	var tosave []PeerPair
-	for _, peer := range g.peers {
+	for _, peer := range g.Peers {
 		tosave = append(tosave, PeerPair{Name: peer.name, IP: peer.ip})
 	}
 
-	csvFile, err := os.Create("/tmp/" + g.name + "/peers.csv")
+	csvFile, err := os.Create("/tmp/" + g.Name + "/peers.csv")
 	if err != nil {
-		g.logger.Panic("Create csv file Failed -- <err>: ")
+		g.Logger.Panic("Create csv file Failed -- <err>: ")
 	}
 	defer csvFile.Close()
 	writer := csv.NewWriter(csvFile)
@@ -87,7 +87,7 @@ func (g *gossiper) Write() {
 		line := []string{pair.Name, pair.IP}
 		err = writer.Write(line)
 		if err != nil {
-			g.logger.Panic("Write Failed -- <err>: ")
+			g.Logger.Panic("Write Failed -- <err>: ")
 		}
 	}
 	writer.Flush()
@@ -116,18 +116,18 @@ func Read(name string) []PeerPair {
 
 func (g *gossiper) Start() {
 	go g.HeartBeatReceiver()
-	g.heartbeatTimer = time.NewTimer(HEARTBEAT_TIMEOUT * time.Millisecond)
-	g.logger.Info(g.name + " started")
+	g.HeartbeatTimer = time.NewTimer(HEARTBEAT_TIMEOUT * time.Millisecond)
+	g.Logger.Info(g.Name + " started")
 	go func() {
 		for {
 			select {
-			case <-g.heartbeatTimer.C:
+			case <-g.HeartbeatTimer.C:
 				g.SendHeartBeats()
-				g.heartbeatTimer.Reset(HEARTBEAT_TIMEOUT * time.Millisecond)
-			case <-g.terminateChan:
+				g.HeartbeatTimer.Reset(HEARTBEAT_TIMEOUT * time.Millisecond)
+			case <-g.TerminateChan:
 				// save neighbors to a file
 				g.Write()
-				g.logger.Info(g.name + " stoped")
+				g.Logger.Info(g.Name + " stoped")
 				break
 			}
 		}
@@ -135,21 +135,21 @@ func (g *gossiper) Start() {
 }
 
 func (g *gossiper) Stop() {
-	g.terminateChan <- 1
+	g.TerminateChan <- 1
 }
 
 func (g *gossiper) AddPeer(p *peer) int {
-	if _, ok := g.peers[p.name]; ok {
+	if _, ok := g.Peers[p.name]; ok {
 		return types.SUCCEED
 	}
-	g.peers[p.name] = p
-	g.logger.Info("New peer " + p.name + " joined " + g.name)
+	g.Peers[p.name] = p
+	g.Logger.Info("New peer " + p.name + " joined " + g.Name)
 	go func() {
 		for {
 			select {
 			case <-p.timer.C:
 				g.RemovePeer(p.name)
-				g.logger.Info("Peer " + p.name + " of " + g.name + " removed")
+				g.Logger.Info("Peer " + p.name + " of " + g.Name + " removed")
 				break
 			}
 		}
@@ -158,13 +158,13 @@ func (g *gossiper) AddPeer(p *peer) int {
 }
 
 func (g *gossiper) RemovePeer(name string) int {
-	delete(g.peers, name)
-	g.logger.Info(name + " removed from " + g.name)
+	delete(g.Peers, name)
+	g.Logger.Info(name + " removed from " + g.Name)
 	return types.SUCCEED
 }
 
 func (g *gossiper) PrintPeerNames() {
-	fmt.Println(g.peers)
+	fmt.Println(g.Peers)
 }
 
 func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
@@ -174,23 +174,23 @@ func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
 	hb := &heartBeat{}
 	err := json.Unmarshal(body, hb)
 	if err != nil {
-		g.logger.Error(err.Error(), "gossiper", "HeartBeatHandler")
+		g.Logger.Error(err.Error(), "gossiper", "HeartBeatHandler")
 	}
 
-	g.logger.Info(g.name + " receive heartbeat from " + hb.Name)
+	g.Logger.Info(g.Name + " receive heartbeat from " + hb.Name)
 	// check node in the peers list or not
-	if _, ok := g.peers[hb.Name]; !ok {
+	if _, ok := g.Peers[hb.Name]; !ok {
 		g.AddPeer(NewPeer(hb.Name, hb.Ip))
-		g.logger.Info("Receive heartbeat from unknown node " + hb.Name + ", added to peerlist")
+		g.Logger.Info("Receive heartbeat from unknown node " + hb.Name + ", added to peerlist")
 	} else {
-		g.peers[hb.Name].timer.Reset(2 * HEARTBEAT_TIMEOUT * time.Millisecond)
-		g.logger.Info(hb.Name + " timer reset")
+		g.Peers[hb.Name].timer.Reset(2 * HEARTBEAT_TIMEOUT * time.Millisecond)
+		g.Logger.Info(hb.Name + " timer reset")
 	}
 }
 
 func (g *gossiper) SendHeartBeats() (int, error) {
-	g.logger.Info(g.name + "sending heartbeats...")
-	for _, peer := range g.peers {
+	g.Logger.Info(g.Name + "sending heartbeats...")
+	for _, peer := range g.Peers {
 		go g.SendHeartBeat(peer)
 	}
 	return types.SUCCEED, nil
@@ -199,13 +199,13 @@ func (g *gossiper) SendHeartBeats() (int, error) {
 func (g *gossiper) SendHeartBeat(p *peer) (int, error) {
 	// encode heartbeat to json
 	hb := &heartBeat{
-		g.name,
-		g.ip,
+		g.Name,
+		g.IP,
 		time.Now().Format(timeFormat),
 	}
 	hbJson, err := json.Marshal(hb)
 	if err != nil {
-		g.logger.Error(g.name+" json marshal failed", "gossiper", "SendHeartBeat")
+		g.Logger.Error(g.Name+" json marshal failed", "gossiper", "SendHeartBeat")
 		return types.FAILED, err
 	}
 	body := bytes.NewBuffer(hbJson)
@@ -214,11 +214,11 @@ func (g *gossiper) SendHeartBeat(p *peer) (int, error) {
 	//send request
 	resp, err := http.Post(url, "application/json;charset=utf-8", body)
 	if err != nil {
-		g.logger.Error(g.name+" send heartbeat to "+p.name+" response error", "gossiper", "SendHeartBeat")
+		g.Logger.Error(g.Name+" send heartbeat to "+p.name+" response error", "gossiper", "SendHeartBeat")
 		return types.HEARTBEAT_RESPONSE_ERROR, err
 	}
 	resp.Body.Close()
-	g.logger.Info(g.name + " sent heartbeat to " + p.name)
+	g.Logger.Info(g.Name + " sent heartbeat to " + p.name)
 	return types.SUCCEED, nil
 }
 
@@ -231,7 +231,7 @@ func (g *gossiper) HeartBeatReceiver() {
 		WriteTimeout: 60 * time.Second,
 		Handler:      mux,
 	}
-	g.logger.Info(g.name + "Start server on " + g.ip + HEARTBEAT_PORT)
+	g.Logger.Info(g.Name + "Start server on " + g.IP + HEARTBEAT_PORT)
 	server.ListenAndServe()
 }
 

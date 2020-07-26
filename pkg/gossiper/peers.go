@@ -18,8 +18,8 @@ func NewPeer(name, ip string) *peer {
 
 func NewPeerFromGossiper(g *gossiper) *peer {
 	return &peer{
-		name:  g.name,
-		ip:    g.ip,
+		name:  g.Name,
+		ip:    g.IP,
 		timer: time.NewTimer(2 * HEARTBEAT_TIMEOUT * time.Millisecond),
 	}
 }
