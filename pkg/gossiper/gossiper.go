@@ -2,12 +2,13 @@ package gossiper
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"github.com/Never-M/MyGossip/pkg/types"
 	"io/ioutil"
 	"net/http"
-	"strings"
+	"os"
 	"time"
 )
 
@@ -39,36 +40,78 @@ func NewGossiper(name, ip string) *gossiper {
 	logger := Newlogger()
 	logger.SaveToFile("/tmp/" + name + "/log")
 	if err != nil {
-		fmt.Println(err)
 		logger.Fatal("create database Failed", "gossiper", "NewGossiper")
+	}
+	peers := make(map[string]*peer)
+
+	//check if file exsit
+	_, err = os.Stat("/tmp/" + name + "/peers.csv")
+	if err == nil {
+		//exsit!
+		peerpairslice := Read(name)
+		if len(peerpairslice) > 0 {
+			for _, item := range peerpairslice {
+				peers[item.Name] = NewPeer(item.Name, item.IP)
+			}
+		}
 	}
 	return &gossiper{
 		name:          name,
 		ip:            ip,
-		peers:         make(map[string]*peer),
+		peers:         peers,
 		terminateChan: make(chan int),
 		db:            db,
 		logger:        logger,
 	}
 }
 
-func (g *gossiper) Write() {
-	var s string
-	for k := range g.peers {
-		s += k
-		s += ","
-	}
-	data := []byte(s[:len(s)-1])
-	ioutil.WriteFile("/tmp/"+g.name+"/peers.txt", data, 0666)
+type PeerPair struct {
+	Name string
+	IP   string
 }
 
-func (g *gossiper) Read() []string {
-	bytes, ok := ioutil.ReadFile("/tmp/" + g.name + "peers.txt")
-	if ok != nil {
-		fmt.Println("read failed")
+func (g *gossiper) Write() {
+	var tosave []PeerPair
+	for _, peer := range g.peers {
+		tosave = append(tosave, PeerPair{Name: peer.name, IP: peer.ip})
 	}
-	peers := strings.Split(string(bytes), ",")
-	return peers
+
+	csvFile, err := os.Create("/tmp/" + g.name + "/peers.csv")
+	if err != nil {
+		g.logger.Panic("Create csv file Failed -- <err>: ")
+	}
+	defer csvFile.Close()
+	writer := csv.NewWriter(csvFile)
+
+	for _, pair := range tosave {
+		line := []string{pair.Name, pair.IP}
+		err = writer.Write(line)
+		if err != nil {
+			g.logger.Panic("Write Failed -- <err>: ")
+		}
+	}
+	writer.Flush()
+}
+
+func Read(name string) []PeerPair {
+	logger := Newlogger()
+	file, err := os.Open("/tmp/" + name + "/peers.csv")
+	if err != nil {
+		logger.Panic("Failed to open csv")
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1
+	record, err := reader.ReadAll()
+	if err != nil {
+		logger.Panic("Failed to read csv")
+	}
+	var peerpairslice []PeerPair
+	for _, item := range record {
+		peerpairslice = append(peerpairslice, PeerPair{Name: item[0], IP: item[1]})
+	}
+	return peerpairslice
 }
 
 func (g *gossiper) Start() {
@@ -82,6 +125,8 @@ func (g *gossiper) Start() {
 				g.SendHeartBeats()
 				g.heartbeatTimer.Reset(HEARTBEAT_TIMEOUT * time.Millisecond)
 			case <-g.terminateChan:
+				// save neighbors to a file
+				g.Write()
 				g.logger.Info(g.name + " stoped")
 				break
 			}
@@ -95,7 +140,7 @@ func (g *gossiper) Stop() {
 
 func (g *gossiper) AddPeer(p *peer) int {
 	if _, ok := g.peers[p.name]; ok {
-		return types.GOSSIPER_PEER_EXIST
+		return types.SUCCEED
 	}
 	g.peers[p.name] = p
 	g.logger.Info("New peer " + p.name + " joined " + g.name)
