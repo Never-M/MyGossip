@@ -15,10 +15,10 @@ func TestWriteRead(t *testing.T) {
 	assert.Equal(t, types.SUCCEED, resultCode, "Add peer failed")
 	resultCode = g.AddPeer(NewPeer("node3", "localhost"))
 	assert.Equal(t, types.SUCCEED, resultCode, "Add peer failed")
-	g.Write()
-	res := Read("node1")
+	g.WritePeersToFile()
+	res := ReadPeersFromFile("node1")
 	fmt.Println(res)
-	g.DB.Close()
+	g.db.Close()
 }
 
 // func TestAddRemovePeer(t *testing.T) {
@@ -29,7 +29,7 @@ func TestWriteRead(t *testing.T) {
 // 	resultCode = g.RemovePeer("node2")
 // 	assert.Equal(t, types.SUCCEED, resultCode, "Remove peer failed")
 // 	//every test case has a Close, deleting it later
-// 	g.DB.Close()
+// 	g.db.Close()
 // }
 
 // func TestSendSingleHeartBeat(t *testing.T) {
@@ -42,8 +42,8 @@ func TestWriteRead(t *testing.T) {
 // 	assert.NoError(t, err)
 // 	assert.Equal(t, types.SUCCEED, resultCode, "Send heartbeat failed")
 // 	//every test case has a Close, deleting it later
-// 	node1.DB.Close()
-// 	node2.DB.Close()
+// 	node1.db.Close()
+// 	node2.db.Close()
 // }
 
 // func TestNodeStartStop(t *testing.T) {
@@ -51,7 +51,7 @@ func TestWriteRead(t *testing.T) {
 // 	node1.Start()
 // 	time.Sleep(3000 * time.Millisecond)
 // 	node1.Stop()
-// 	node1.DB.Close()
+// 	node1.db.Close()
 // }
 
 // func TestGossiperLifeCycle(t *testing.T) {
@@ -63,6 +63,6 @@ func TestWriteRead(t *testing.T) {
 // 	time.Sleep(3000 * time.Millisecond)
 // 	node1.Stop()
 // 	node2.Stop()
-// 	node1.DB.Close()
-// 	node2.DB.Close()
+// 	node1.db.Close()
+// 	node2.db.Close()
 // }

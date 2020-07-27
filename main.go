@@ -18,7 +18,7 @@ func main() {
 		if input == "1" {
 			_, err := node1.SendHeartBeats()
 			if err != nil {
-				fmt.Printf("Send req error, %v", err)
+				logger.Error("Send req err")
 			}
 		} else {
 			break
