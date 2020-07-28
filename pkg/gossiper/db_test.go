@@ -20,6 +20,7 @@ func TestDBAddDelete(t *testing.T) {
 	assert.Equal(t, types.DB_GET_ERROR, resultCode, "Get Failed")
 	//every test case has a Close, deleting it later
 	mydb.Close()
+	TearDown("test")
 }
 
 func TestListData(t *testing.T) {
@@ -34,6 +35,7 @@ func TestListData(t *testing.T) {
 	assert.Equal(t, len(res), 2, "ListData Failed")
 	//every test case has a Close, deleting it later
 	mydb.Close()
+	TearDown("test1")
 }
 
 func TestBatch(t *testing.T) {
@@ -45,4 +47,5 @@ func TestBatch(t *testing.T) {
 	assert.Equal(t, types.SUCCEED, resultCode, "Batch Commit Failed")
 	//every test case has a Close, deleting it later
 	mydb.Close()
+	TearDown("test2")
 }
