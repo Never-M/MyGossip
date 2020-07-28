@@ -1,9 +1,8 @@
 package types
 
 const (
-	SUCCEED             = 0
-	FAILED              = -1
-	GOSSIPER_PEER_EXIST = 1
+	SUCCEED = 0
+	FAILED  = -1
 
 	HEARTBEAT_REQUEST_ERROR  = 11
 	HEARTBEAT_RESPONSE_ERROR = 12
