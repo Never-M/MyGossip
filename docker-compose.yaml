@@ -35,6 +35,23 @@ services:
     tty: true
     entrypoint: sh
 
+  node3:
+    build: .
+    container_name: node3
+    hostname: node3
+    privileged: true
+    environment:
+      USER: root
+    expose:
+      - "8001"
+    volumes:
+      - .:/root/project
+    networks:
+      gossiper-net:
+        ipv4_address: 172.28.1.3
+    tty: true
+    entrypoint: sh
+
 networks:
   gossiper-net:
     ipam:

@@ -129,7 +129,7 @@ func (g *Gossiper) Start() {
 			case <-g.terminateChan:
 				// save neighbors to a file
 				g.WritePeersToFile()
-				g.logger.Info(g.name + " stoped")
+				g.logger.Info(g.name + " stopped")
 				break
 			}
 		}
@@ -166,7 +166,14 @@ func (g *Gossiper) RemovePeer(name string) int {
 }
 
 func (g *Gossiper) PrintPeerNames() {
-	fmt.Println(g.peers)
+	if len(g.peers) == 0 {
+		fmt.Printf("%v has no peer")
+		return
+	}
+	fmt.Printf("Peers of %v are:", g.name)
+	for name, _ := range g.peers {
+		fmt.Print(name + " ")
+	}
 }
 
 func (g *Gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
