@@ -3,23 +3,23 @@ package gossiper
 import "time"
 
 type peer struct {
-	name 	string
-	ip 		string
-	timer	*time.Timer
+	name  string
+	ip    string
+	timer *time.Timer
 }
 
 func NewPeer(name, ip string) *peer {
 	return &peer{
-		name:name,
-		ip:ip,
-		timer:time.NewTimer(2 * HEARTBEAT_TIMEOUT * time.Millisecond),
+		name:  name,
+		ip:    ip,
+		timer: time.NewTimer(2 * HEARTBEAT_TIMEOUT * time.Millisecond),
 	}
 }
 
-func NewPeerFromGossiper(g *gossiper) *peer {
+func NewPeerFromGossiper(g *Gossiper) *peer {
 	return &peer{
-		name:g.name,
-		ip:g.ip,
-		timer:time.NewTimer(2 * HEARTBEAT_TIMEOUT * time.Millisecond),
+		name:  g.name,
+		ip:    g.ip,
+		timer: time.NewTimer(2 * HEARTBEAT_TIMEOUT * time.Millisecond),
 	}
 }

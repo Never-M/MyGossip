@@ -2,11 +2,14 @@ package gossiper
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"github.com/Never-M/MyGossip/pkg/types"
 	"io/ioutil"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -17,14 +20,14 @@ const HEARTBEAT_PORT = ":8001"
 const HEARTBEAT_PATH = "heartbeat"
 const HEARTBEAT_TIMEOUT = 1000
 
-type gossiper struct {
-	name   string
-	ip     string
-	peers  map[string]*peer
+type Gossiper struct {
+	name           string
+	ip             string
+	peers          map[string]*peer
 	heartbeatTimer *time.Timer
-	terminateChan chan int
-	db     *mydb
-	logger *logger
+	terminateChan  chan int
+	db             *mydb
+	logger         *logger
 }
 
 type heartBeat struct {
@@ -33,25 +36,87 @@ type heartBeat struct {
 	Time string `json:"time"`
 }
 
-func NewGossiper(name, ip string) *gossiper {
-	_, db, err := Newdb("/tmp/" + name + "/database")
+func NewGossiper(name, ip string) *Gossiper {
+	_, db, err := Newdb(filepath.Join("/tmp/", name, "/database"))
 	logger := Newlogger()
-	logger.SaveToFile("/tmp/" + name + "/log")
+	logger.SaveToFile(filepath.Join("/tmp/", name, "/log"))
 	if err != nil {
-		fmt.Println(err)
 		logger.Fatal("create database Failed", "gossiper", "NewGossiper")
 	}
-	return &gossiper{
-		name:   name,
-		ip:     ip,
-		peers:  make(map[string]*peer),
-		terminateChan:make(chan int),
-		db:     db,
-		logger: logger,
+	peers := make(map[string]*peer)
+
+	//check if file exsit
+	f, err := os.Open(filepath.Join("/tmp/", name, "/peers.csv"))
+	f.Close()
+	if err == nil {
+		//exsit!
+		peerPairSlice := ReadPeersFromFile(name)
+		if len(peerPairSlice) > 0 {
+			for _, item := range peerPairSlice {
+				peers[item.Name] = NewPeer(item.Name, item.IP)
+			}
+		}
+	}
+	return &Gossiper{
+		name:          name,
+		ip:            ip,
+		peers:         peers,
+		terminateChan: make(chan int),
+		db:            db,
+		logger:        logger,
 	}
 }
 
-func (g *gossiper) Start()  {
+type PeerPair struct {
+	Name string
+	IP   string
+}
+
+func (g *Gossiper) WritePeersToFile() {
+	var toSave []PeerPair
+	for _, peer := range g.peers {
+		toSave = append(toSave, PeerPair{Name: peer.name, IP: peer.ip})
+	}
+
+	csvFile, err := os.Create(filepath.Join("/tmp/", g.name, "/peers.csv"))
+	if err != nil {
+		g.logger.Panic("Create csv file Failed -- <err>: ")
+	}
+	defer csvFile.Close()
+	writer := csv.NewWriter(csvFile)
+
+	for _, pair := range toSave {
+		line := []string{pair.Name, pair.IP}
+		err = writer.Write(line)
+		if err != nil {
+			g.logger.Panic("Write Failed -- <err>: ")
+		}
+	}
+	writer.Flush()
+}
+
+func ReadPeersFromFile(name string) []PeerPair {
+	logger := Newlogger()
+	file, err := os.Open(filepath.Join("/tmp/", name, "/peers.csv"))
+	if err != nil {
+		logger.Panic("Failed to open csv")
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1
+	record, err := reader.ReadAll()
+	if err != nil {
+		logger.Panic("Failed to read csv")
+	}
+	var peerPairSlice []PeerPair
+	for _, item := range record {
+		peerPairSlice = append(peerPairSlice, PeerPair{Name: item[0], IP: item[1]})
+	}
+	return peerPairSlice
+}
+
+func (g *Gossiper) Start() {
 	go g.HeartBeatReceiver()
 	g.heartbeatTimer = time.NewTimer(HEARTBEAT_TIMEOUT * time.Millisecond)
 	g.logger.Info(g.name + " started")
@@ -62,6 +127,8 @@ func (g *gossiper) Start()  {
 				g.SendHeartBeats()
 				g.heartbeatTimer.Reset(HEARTBEAT_TIMEOUT * time.Millisecond)
 			case <-g.terminateChan:
+				// save neighbors to a file
+				g.WritePeersToFile()
 				g.logger.Info(g.name + " stoped")
 				break
 			}
@@ -69,13 +136,13 @@ func (g *gossiper) Start()  {
 	}()
 }
 
-func (g *gossiper) Stop()  {
+func (g *Gossiper) Stop() {
 	g.terminateChan <- 1
 }
 
-func (g *gossiper) AddPeer(p *peer) int {
+func (g *Gossiper) AddPeer(p *peer) int {
 	if _, ok := g.peers[p.name]; ok {
-		return types.GOSSIPER_PEER_EXIST
+		return types.SUCCEED
 	}
 	g.peers[p.name] = p
 	g.logger.Info("New peer " + p.name + " joined " + g.name)
@@ -92,17 +159,17 @@ func (g *gossiper) AddPeer(p *peer) int {
 	return types.SUCCEED
 }
 
-func (g *gossiper) RemovePeer(name string) int {
+func (g *Gossiper) RemovePeer(name string) int {
 	delete(g.peers, name)
 	g.logger.Info(name + " removed from " + g.name)
 	return types.SUCCEED
 }
 
-func (g *gossiper) PrintPeerNames() {
+func (g *Gossiper) PrintPeerNames() {
 	fmt.Println(g.peers)
 }
 
-func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
+func (g *Gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
 	// Decode heartbeat json
 	body, _ := ioutil.ReadAll(r.Body)
 	defer r.Body.Close()
@@ -123,7 +190,7 @@ func (g *gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (g *gossiper) SendHeartBeats() (int, error) {
+func (g *Gossiper) SendHeartBeats() (int, error) {
 	g.logger.Info(g.name + "sending heartbeats...")
 	for _, peer := range g.peers {
 		go g.SendHeartBeat(peer)
@@ -131,7 +198,7 @@ func (g *gossiper) SendHeartBeats() (int, error) {
 	return types.SUCCEED, nil
 }
 
-func (g *gossiper) SendHeartBeat(p *peer) (int, error) {
+func (g *Gossiper) SendHeartBeat(p *peer) (int, error) {
 	// encode heartbeat to json
 	hb := &heartBeat{
 		g.name,
@@ -140,7 +207,7 @@ func (g *gossiper) SendHeartBeat(p *peer) (int, error) {
 	}
 	hbJson, err := json.Marshal(hb)
 	if err != nil {
-		g.logger.Error(g.name + " json marshal failed", "gossiper", "SendHeartBeat")
+		g.logger.Error(g.name+" json marshal failed", "gossiper", "SendHeartBeat")
 		return types.FAILED, err
 	}
 	body := bytes.NewBuffer(hbJson)
@@ -149,7 +216,7 @@ func (g *gossiper) SendHeartBeat(p *peer) (int, error) {
 	//send request
 	resp, err := http.Post(url, "application/json;charset=utf-8", body)
 	if err != nil {
-		g.logger.Error(g.name + " send heartbeat to " + p.name + " response error", "gossiper", "SendHeartBeat")
+		g.logger.Error(g.name+" send heartbeat to "+p.name+" response error", "gossiper", "SendHeartBeat")
 		return types.HEARTBEAT_RESPONSE_ERROR, err
 	}
 	resp.Body.Close()
@@ -157,7 +224,7 @@ func (g *gossiper) SendHeartBeat(p *peer) (int, error) {
 	return types.SUCCEED, nil
 }
 
-func (g *gossiper) HeartBeatReceiver() {
+func (g *Gossiper) HeartBeatReceiver() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/"+HEARTBEAT_PATH, g.HeartBeatHandler)
 	server := &http.Server{
@@ -172,4 +239,31 @@ func (g *gossiper) HeartBeatReceiver() {
 
 func (hb heartBeat) String() string {
 	return "HeartBeat back from: " + hb.Name + ", at " + hb.Time
+}
+
+func (g *Gossiper) GetName() string {
+	return g.name
+}
+
+func (g *Gossiper) GetIP() string {
+	return g.ip
+}
+
+func (g *Gossiper) GetPeers() map[string]*peer {
+	return g.peers
+}
+
+func (g *Gossiper) GetHeartBeatTimer() *time.Timer {
+	return g.heartbeatTimer
+}
+
+func (g *Gossiper) GetTerminateChan() chan int {
+	return g.terminateChan
+}
+
+func (g *Gossiper) GetDB() *mydb {
+	return g.db
+}
+func (g *Gossiper) GetLogger() *logger {
+	return g.logger
 }
