@@ -6,6 +6,7 @@ import (
 )
 
 func main() {
+	fmt.Println("random")
 	var begin, command, name, ip string
 	for begin != "start" {
 		fmt.Println("Enter start to begin")
@@ -39,6 +40,13 @@ func main() {
 					g.PrintPeerNames()
 				case "help":
 					help()
+				case "put":
+					var key, value string
+					fmt.Println("Enter key")
+					fmt.Scan(&key)
+					fmt.Println("Enter value")
+					fmt.Scan(&value)
+					g.Put(key, value)
 				default:
 					fmt.Println("Invalid input, try again")
 					help()

@@ -6,29 +6,45 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Never-M/MyGossip/pkg/types"
+	"github.com/String-Reconciliation-Ditributed-System/RCDS_GO/pkg/lib/genSync"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
+	"github.com/String-Reconciliation-Ditributed-System/RCDS_GO/pkg/lib/algorithm/iblt"
+	"github.com/String-Reconciliation-Ditributed-System/RCDS_GO/pkg/set"
 )
 
+const (
+	PUT = 1
+	GET = 2
+	DELETE = 3
+)
 // Time formatter
 var timeFormat = "2006-01-02 15:04:05"
 
-const HEARTBEAT_PORT = ":8001"
+const HEARTBEAT_PORT = ":8002"
+const SYNC_PORT = 8001
 const HEARTBEAT_PATH = "heartbeat"
 const HEARTBEAT_TIMEOUT = 1000
 
+const FIXED_DIFF = 4
+
 type Gossiper struct {
-	name           string
-	ip             string
-	peers          map[string]*peer
-	heartbeatTimer *time.Timer
-	terminateChan  chan int
-	db             *mydb
-	logger         *logger
+	name			string
+	ip				string
+	peers			map[string]*peer
+	heartbeatTimer	*time.Timer
+	terminateChan	chan int
+	q				queue
+	syncServer		genSync.GenSync
+	pointer 		int
+	db				*mydb
+	logger			*logger
 }
+
 
 type heartBeat struct {
 	Name string `json:"name"`
@@ -36,11 +52,34 @@ type heartBeat struct {
 	Time string `json:"time"`
 }
 
+type queue []*logEntry
+
+func (q queue) PopLeft() *logEntry {
+	if len(q) != 0 {
+		res := q[0]
+		q = q[1:]
+		return res
+	} else {
+		return nil
+	}
+}
+
+func (q queue) Push(l *logEntry) {
+	q = append(q, l)
+}
+
+type logEntry struct {
+	operation		int
+	key 			string
+	value			string
+}
+
 func NewGossiper(name, ip string) *Gossiper {
 	_, db, err := Newdb(filepath.Join("/tmp/", name, "/database"))
 	logger := Newlogger()
 	logger.SaveToFile(filepath.Join("/tmp/", name, "/log"))
 	if err != nil {
+		fmt.Println(err)
 		logger.Fatal("create database Failed", "gossiper", "NewGossiper")
 	}
 	peers := make(map[string]*peer)
@@ -48,22 +87,25 @@ func NewGossiper(name, ip string) *Gossiper {
 	//check if file exsit
 	f, err := os.Open(filepath.Join("/tmp/", name, "/peers.csv"))
 	f.Close()
-	if err == nil {
-		//exsit!
-		peerPairSlice := ReadPeersFromFile(name)
-		if len(peerPairSlice) > 0 {
-			for _, item := range peerPairSlice {
-				peers[item.Name] = NewPeer(item.Name, item.IP)
-			}
-		}
-	}
+	//if err == nil {
+	//	//exsit!
+	//	peerPairSlice := ReadPeersFromFile(name)
+	//	if len(peerPairSlice) > 0 {
+	//		for _, item := range peerPairSlice {
+	//			peers[item.Name] = NewPeer(item.Name, item.IP)
+	//		}
+	//	}
+	//}
+	// new Iblt
+	syncServer, err := iblt.NewIBLTSetSync(iblt.WithSymmetricSetDiff(FIXED_DIFF))
 	return &Gossiper{
-		name:          name,
-		ip:            ip,
-		peers:         peers,
-		terminateChan: make(chan int),
-		db:            db,
-		logger:        logger,
+		name:          	name,
+		ip:            	ip,
+		peers:         	peers,
+		terminateChan: 	make(chan int),
+		db:            	db,
+		logger:        	logger,
+		syncServer:		syncServer,
 	}
 }
 
@@ -118,6 +160,7 @@ func ReadPeersFromFile(name string) []PeerPair {
 
 func (g *Gossiper) Start() {
 	go g.HeartBeatReceiver()
+
 	g.heartbeatTimer = time.NewTimer(HEARTBEAT_TIMEOUT * time.Millisecond)
 	g.logger.Info(g.name + " started")
 	go func() {
@@ -134,6 +177,8 @@ func (g *Gossiper) Start() {
 			}
 		}
 	}()
+
+	go g.SyncClient()
 }
 
 func (g *Gossiper) Stop() {
@@ -146,10 +191,12 @@ func (g *Gossiper) AddPeer(p *peer) int {
 	}
 	g.peers[p.name] = p
 	g.logger.Info("New peer " + p.name + " joined " + g.name)
+	go g.SyncServerToSpecificPeerStart(p.name)
 	go func() {
 		for {
 			select {
 			case <-p.timer.C:
+
 				g.RemovePeer(p.name)
 				g.logger.Info("Peer " + p.name + " of " + g.name + " removed")
 				break
@@ -242,6 +289,94 @@ func (g *Gossiper) HeartBeatReceiver() {
 	}
 	g.logger.Info(g.name + "Start server on " + g.ip + HEARTBEAT_PORT)
 	server.ListenAndServe()
+}
+
+func (g *Gossiper) SyncClient() {
+	for {
+		if len(g.q) >= FIXED_DIFF / 2 {
+			fmt.Println("SyncClient start")
+			var logEntriesToCommit []*logEntry
+
+			for i := 0; i < FIXED_DIFF / 2; i++ {
+				// add to syncServer
+				logEntryToCommit := g.q.PopLeft()
+				err := g.syncServer.AddElement(logEntryToCommit)
+				if err != nil {
+					g.logger.Error(g.name + ":Put error " + err.Error())
+				}
+
+				// add to commit
+				logEntriesToCommit = append(logEntriesToCommit, logEntryToCommit)
+			}
+
+			for peerName, peer := range g.peers {
+				go func() {
+					fmt.Println("SyncClient!!!! with " + peer.ip)
+					e := g.syncServer.SyncClient(peer.ip, SYNC_PORT)
+					if e != nil {
+						g.logger.Error(g.name + ":Sync error with " + peerName)
+					}
+					s := g.syncServer.GetLocalSet()
+					for itemKey, itemValue := range *s {
+						fmt.Println(itemKey)
+						fmt.Println(itemValue)
+					}
+					// TODO 写入queue，并commit到db
+				}()
+			}
+		}
+	}
+}
+
+func (g *Gossiper) SyncServerToSpecificPeerStart(peerName string) {
+	//for {
+		var wg sync.WaitGroup
+		wg.Add(1)
+		//go func() {
+			err := g.syncServer.SyncServer(g.peers[peerName].ip, SYNC_PORT)
+			if err != nil {
+				fmt.Println(err)
+				g.logger.Error("SyncServer err with " + peerName + ": " + err.Error())
+				return
+			}
+			wg.Done()
+		//}()
+		wg.Wait()
+		s := set.New()
+		s = g.syncServer.GetLocalSet()
+		fmt.Println("SyncServer with " + peerName + " done")
+		for k, v := range *s {
+			fmt.Println(k)
+			fmt.Println(v)
+		}
+	//}
+}
+
+func (g *Gossiper) Put(key, value string) {
+	entry := &logEntry{
+		operation:PUT,
+		key:key,
+		value:value,
+	}
+	g.q.Push(entry)
+}
+
+func (g *Gossiper) Delete(key string) {
+	entry := &logEntry{
+		operation:DELETE,
+		key:key,
+	}
+	g.q.Push(entry)
+}
+
+func (g *Gossiper) Get(key string) string {
+	rc, value, err := g.db.Get(key)
+	if rc == types.SUCCEED {
+		return value
+	} else {
+		g.logger.Error(g.name + ":Get error" + string(rc) + " " + err.Error())
+		return ""
+	}
 }
 
 func (hb heartBeat) String() string {

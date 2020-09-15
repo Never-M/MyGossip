@@ -10,6 +10,7 @@ services:
       USER: root
     expose:
       - "8001"
+      - "8002"
     volumes:
       - .:/root/project
     networks:
@@ -27,6 +28,7 @@ services:
       USER: root
     expose:
       - "8001"
+      - "8002"
     volumes:
       - .:/root/project
     networks:
@@ -44,6 +46,7 @@ services:
       USER: root
     expose:
       - "8001"
+      - "8002"
     volumes:
       - .:/root/project
     networks:
