@@ -25,8 +25,8 @@ const (
 // Time formatter
 var timeFormat = "2006-01-02 15:04:05"
 
-const HEARTBEAT_PORT = ":8002"
-const SYNC_PORT = 8001
+const HEARTBEAT_PORT = ":8001"
+const SYNC_PORT = 8002
 const HEARTBEAT_PATH = "heartbeat"
 const HEARTBEAT_TIMEOUT = 1000
 
@@ -43,6 +43,7 @@ type Gossiper struct {
 	pointer 		int
 	db				*mydb
 	logger			*logger
+	counter 		int
 }
 
 
@@ -54,24 +55,25 @@ type heartBeat struct {
 
 type queue []*logEntry
 
-func (q queue) PopLeft() *logEntry {
-	if len(q) != 0 {
-		res := q[0]
-		q = q[1:]
+func (g *Gossiper) PopLeft() *logEntry {
+	if len(g.q) != 0 {
+		res := g.q[0]
+		g.q = g.q[1:]
 		return res
 	} else {
 		return nil
 	}
 }
 
-func (q queue) Push(l *logEntry) {
-	q = append(q, l)
+func (g *Gossiper) Push(l *logEntry) {
+	g.q = append(g.q, l)
 }
 
 type logEntry struct {
 	operation		int
 	key 			string
 	value			string
+	timestamp 		time.Time
 }
 
 func NewGossiper(name, ip string) *Gossiper {
@@ -106,6 +108,7 @@ func NewGossiper(name, ip string) *Gossiper {
 		db:            	db,
 		logger:        	logger,
 		syncServer:		syncServer,
+		counter: 		0,
 	}
 }
 
@@ -160,6 +163,8 @@ func ReadPeersFromFile(name string) []PeerPair {
 
 func (g *Gossiper) Start() {
 	go g.HeartBeatReceiver()
+	go g.SyncServerStart()
+	go g.CheckSyncClient()
 
 	g.heartbeatTimer = time.NewTimer(HEARTBEAT_TIMEOUT * time.Millisecond)
 	g.logger.Info(g.name + " started")
@@ -177,8 +182,6 @@ func (g *Gossiper) Start() {
 			}
 		}
 	}()
-
-	go g.SyncClient()
 }
 
 func (g *Gossiper) Stop() {
@@ -191,7 +194,6 @@ func (g *Gossiper) AddPeer(p *peer) int {
 	}
 	g.peers[p.name] = p
 	g.logger.Info("New peer " + p.name + " joined " + g.name)
-	go g.SyncServerToSpecificPeerStart(p.name)
 	go func() {
 		for {
 			select {
@@ -291,52 +293,61 @@ func (g *Gossiper) HeartBeatReceiver() {
 	server.ListenAndServe()
 }
 
-func (g *Gossiper) SyncClient() {
+func (g *Gossiper) SyncClient(logEntryNum int) {
+	var logEntriesToCommit []*logEntry
+
+	for i := 0; i < logEntryNum; i++ {
+		logEntryToCommit := g.PopLeft()
+		// add to commit
+		logEntriesToCommit = append(logEntriesToCommit, logEntryToCommit)
+
+
+		err := g.syncServer.AddElement(encodeLogEntry(logEntryToCommit))
+		if err != nil {
+			g.logger.Error(g.name + ":Put error " + err.Error())
+		}
+	}
+
+	var wg sync.WaitGroup
+	for peerName, peer := range g.peers {
+		wg.Add(1)
+		go func() {
+			e := g.syncServer.SyncClient(peer.ip, SYNC_PORT)
+			if e != nil {
+				fmt.Printf("SyncClient error: %v", e)
+				g.logger.Error(g.name + ":Sync error with " + peerName)
+			}
+			wg.Done()
+			//s := g.syncServer.GetLocalSet()
+			i := g.syncServer.GetTotalBytes()
+			fmt.Println(i)
+			// TODO 写入queue，并commit到db
+		}()
+	}
+	wg.Wait()
+}
+
+func (g *Gossiper) CheckSyncClient() {
 	for {
-		if len(g.q) >= FIXED_DIFF / 2 {
-			fmt.Println("SyncClient start")
-			var logEntriesToCommit []*logEntry
-
-			for i := 0; i < FIXED_DIFF / 2; i++ {
-				// add to syncServer
-				logEntryToCommit := g.q.PopLeft()
-				err := g.syncServer.AddElement(logEntryToCommit)
-				if err != nil {
-					g.logger.Error(g.name + ":Put error " + err.Error())
-				}
-
-				// add to commit
-				logEntriesToCommit = append(logEntriesToCommit, logEntryToCommit)
-			}
-
-			for peerName, peer := range g.peers {
-				go func() {
-					fmt.Println("SyncClient!!!! with " + peer.ip)
-					e := g.syncServer.SyncClient(peer.ip, SYNC_PORT)
-					if e != nil {
-						g.logger.Error(g.name + ":Sync error with " + peerName)
-					}
-					s := g.syncServer.GetLocalSet()
-					for itemKey, itemValue := range *s {
-						fmt.Println(itemKey)
-						fmt.Println(itemValue)
-					}
-					// TODO 写入queue，并commit到db
-				}()
-			}
+		if len(g.q) > FIXED_DIFF / 2 {
+			g.SyncClient(FIXED_DIFF/2)
+		} else if len(g.q) < FIXED_DIFF / 2 && len(g.q) > 0 {
+			g.SyncClient(len(g.q))
+		} else {
+			time.Sleep(time.Second)
 		}
 	}
 }
 
-func (g *Gossiper) SyncServerToSpecificPeerStart(peerName string) {
-	//for {
+func (g *Gossiper) SyncServerStart() {
+	for {
 		var wg sync.WaitGroup
 		wg.Add(1)
 		//go func() {
-			err := g.syncServer.SyncServer(g.peers[peerName].ip, SYNC_PORT)
+			err := g.syncServer.SyncServer(SYNC_PORT)
 			if err != nil {
 				fmt.Println(err)
-				g.logger.Error("SyncServer err with " + peerName + ": " + err.Error())
+				g.logger.Error("SyncServer err: " + err.Error())
 				return
 			}
 			wg.Done()
@@ -344,12 +355,12 @@ func (g *Gossiper) SyncServerToSpecificPeerStart(peerName string) {
 		wg.Wait()
 		s := set.New()
 		s = g.syncServer.GetLocalSet()
-		fmt.Println("SyncServer with " + peerName + " done")
+		fmt.Println("SyncServer done")
 		for k, v := range *s {
 			fmt.Println(k)
 			fmt.Println(v)
 		}
-	//}
+	}
 }
 
 func (g *Gossiper) Put(key, value string) {
@@ -357,16 +368,25 @@ func (g *Gossiper) Put(key, value string) {
 		operation:PUT,
 		key:key,
 		value:value,
+		timestamp:time.Now(),
 	}
-	g.q.Push(entry)
+	g.Push(entry)
+
+	if g.counter++; g.counter == FIXED_DIFF/2 {
+		g.SyncClient(FIXED_DIFF/2)
+	}
 }
 
 func (g *Gossiper) Delete(key string) {
 	entry := &logEntry{
 		operation:DELETE,
 		key:key,
+		timestamp:time.Now(),
 	}
-	g.q.Push(entry)
+	g.Push(entry)
+	if g.counter++; g.counter == FIXED_DIFF/2 {
+		g.SyncClient(FIXED_DIFF/2)
+	}
 }
 
 func (g *Gossiper) Get(key string) string {
@@ -377,6 +397,22 @@ func (g *Gossiper) Get(key string) string {
 		g.logger.Error(g.name + ":Get error" + string(rc) + " " + err.Error())
 		return ""
 	}
+}
+
+func encodeLogEntry(l *logEntry) []byte {
+	buf, err := json.Marshal(l)
+	if err != nil {
+		fmt.Printf("Encode error: %v", err)
+	}
+	return buf
+}
+
+func decodeLogEntry(b []byte) *logEntry{
+	l := &logEntry{}
+	if err := json.Unmarshal(b, &l); err != nil {
+		fmt.Printf("Decode error: %v", err)
+	}
+	return l
 }
 
 func (hb heartBeat) String() string {

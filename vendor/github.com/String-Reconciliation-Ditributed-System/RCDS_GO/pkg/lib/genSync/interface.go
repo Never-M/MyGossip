@@ -9,7 +9,7 @@ type GenSync interface {
 	DeleteElement(elem interface{}) error
 
 	SyncClient(ip string, port int) error
-	SyncServer(ip string, port int) error
+	SyncServer(port int) error
 
 	GetLocalSet() *set.Set
 	GetSentBytes() int

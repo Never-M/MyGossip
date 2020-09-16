@@ -6,60 +6,58 @@ import (
 )
 
 func main() {
-	fmt.Println("random")
-	var begin, command, name, ip string
-	for begin != "start" {
-		fmt.Println("Enter start to begin")
-		fmt.Scan(&begin)
-		if begin == "start" {
-			fmt.Println("Enter node name")
+	var command, name, ip string
+	fmt.Println("Enter node name")
+	fmt.Scan(&name)
+	fmt.Println("Enter node ip")
+	fmt.Scan(&ip)
+	g := gp.NewGossiper(name, ip)
+	g.Start()
+	for {
+		fmt.Println()
+		fmt.Print(g.GetName() + ": ")
+		fmt.Scan(&command)
+		switch command {
+		case "stop":
+			g.Stop()
+			break
+		case "add":
+			fmt.Println("Enter peer name")
 			fmt.Scan(&name)
-			fmt.Println("Enter node ip")
+			fmt.Println("Enter peer ip")
 			fmt.Scan(&ip)
-			g := gp.NewGossiper(name, ip)
-			g.Start()
-			for {
-				fmt.Println()
-				fmt.Print(g.GetName() + ": ")
-				fmt.Scan(&command)
-				switch command {
-				case "stop":
-					g.Stop()
-					break
-				case "add":
-					fmt.Println("Enter peer name")
-					fmt.Scan(&name)
-					fmt.Println("Enter peer ip")
-					fmt.Scan(&ip)
-					g.AddPeer(gp.NewPeer(name, ip))
-				case "remove":
-					fmt.Println("Enter peer name to remove")
-					fmt.Scan(&name)
-					g.RemovePeer(name)
-				case "show":
-					g.PrintPeerNames()
-				case "help":
-					help()
-				case "put":
-					var key, value string
-					fmt.Println("Enter key")
-					fmt.Scan(&key)
-					fmt.Println("Enter value")
-					fmt.Scan(&value)
-					g.Put(key, value)
-				default:
-					fmt.Println("Invalid input, try again")
-					help()
-				}
-			}
+			g.AddPeer(gp.NewPeer(name, ip))
+		case "remove":
+			fmt.Println("Enter peer name to remove")
+			fmt.Scan(&name)
+			g.RemovePeer(name)
+		case "show":
+			g.PrintPeerNames()
+		case "help":
+			help()
+		case "put":
+			var key, value string
+			fmt.Println("Enter key")
+			fmt.Scan(&key)
+			fmt.Println("Enter value")
+			fmt.Scan(&value)
+			g.Put(key, value)
+		case "get":
+			var key string
+			fmt.Println("Enter key")
+			fmt.Scan(&key)
+			value := g.Get(key)
+			fmt.Printf("Value of key %v: %v", key, value)
+		default:
+			fmt.Println("Invalid input, try again")
+			help()
 		}
-		break
 	}
 }
 
 func help() {
 	fmt.Println("Please use commands below:")
-	fmt.Println("stop: Shut down current node")
+	fmt.Println("exit: Shut down and exit current node")
 	fmt.Println("add: Add a peer to current node")
 	fmt.Println("remove: remove a peer from current node")
 	fmt.Println("show: Print out peers of current node")
