@@ -18,9 +18,10 @@ func main() {
 		fmt.Print(g.GetName() + ": ")
 		fmt.Scan(&command)
 		switch command {
-		case "stop":
+		case "exit":
 			g.Stop()
-			break
+			fmt.Println("Bye")
+			return
 		case "add":
 			fmt.Println("Enter peer name")
 			fmt.Scan(&name)
@@ -61,4 +62,6 @@ func help() {
 	fmt.Println("add: Add a peer to current node")
 	fmt.Println("remove: remove a peer from current node")
 	fmt.Println("show: Print out peers of current node")
+	fmt.Println("put: Put a key & value pair to the database")
+	fmt.Println("get: get the value of a specific key")
 }

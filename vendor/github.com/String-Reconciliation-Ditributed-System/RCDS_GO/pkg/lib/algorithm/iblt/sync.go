@@ -241,8 +241,8 @@ func (i *ibltSync) SyncClient(ip string, port int) error {
 
 	return nil
 }
-func (i *ibltSync) SyncServer(port int) error {
-	server, err := genSync.NewTcpConnection("", port)
+func (i *ibltSync) SyncServer(ip string, port int) error {
+	server, err := genSync.NewTcpConnection(ip, port)
 	if err != nil {
 		return err
 	}

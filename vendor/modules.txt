@@ -1,6 +1,6 @@
 # github.com/SheldonZhong/go-IBLT v0.0.0-20190403023046-6d1c7939ba91
 github.com/SheldonZhong/go-IBLT
-# github.com/String-Reconciliation-Ditributed-System/RCDS_GO v0.0.0-20200915013749-822501ce70fe
+# github.com/String-Reconciliation-Ditributed-System/RCDS_GO v0.0.0-20200917010703-15425706d52c
 ## explicit
 github.com/String-Reconciliation-Ditributed-System/RCDS_GO/pkg/lib/algorithm
 github.com/String-Reconciliation-Ditributed-System/RCDS_GO/pkg/lib/algorithm/iblt
