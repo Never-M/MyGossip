@@ -19,8 +19,7 @@ import (
 
 const (
 	PUT    = 1
-	GET    = 2
-	DELETE = 3
+	DELETE = 2
 )
 
 // Time formatter
@@ -195,6 +194,26 @@ func (g *Gossiper) AddPeer(p *peer) int {
 	}
 	g.peers[p.name] = p
 	g.logger.Info("New peer " + p.name + " joined " + g.name)
+
+	// sync with new peer
+	/*
+		var localToSyncEntries []*logEntry
+		_, pairs, err := g.db.ListData()
+		if err != nil {
+			g.logger.Error(g.name + "can't get data from db")
+		}
+		for _, pair := range pairs {
+			entry := &logEntry{
+				operation: PUT,
+				key:       pair.key,
+				value:     pair.val,
+				timestamp: time.Now(),
+			}
+			localToSyncEntries = append(localToSyncEntries, entry)
+		}
+	*/
+	// will queue is a parameter of sync.
+
 	go func() {
 		for {
 			select {
@@ -325,8 +344,22 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 			// TODO add new elements from peers to the queue
 		}()
 	}
-	// TODO commit elements in logEntriesToCommit to localdb
 	wg.Wait()
+
+	// TODO commit elements in logEntriesToCommit to localdb
+	for _, entry := range logEntriesToCommit {
+		if entry.operation == PUT {
+			_, e := g.db.Put(entry.key, entry.value)
+			if e != nil {
+				g.logger.Error(g.name + "can't put (" + entry.key + "," + entry.value + ") into database")
+			}
+		} else if entry.operation == DELETE { // DELETE
+			_, e := g.db.Delete(entry.key)
+			if e != nil {
+				g.logger.Error(g.name + "can't delete" + entry.key + "from database")
+			}
+		}
+	}
 }
 
 func (g *Gossiper) CheckSyncClient() {
