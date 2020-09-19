@@ -12,6 +12,7 @@ type GenSync interface {
 	SyncServer(ip string, port int) error
 
 	GetLocalSet() *set.Set
+	GetSetAdditions() *set.Set 	// Set the set that is added to the local set.
 	GetSentBytes() int
 	GetReceivedBytes() int
 	GetTotalBytes() int

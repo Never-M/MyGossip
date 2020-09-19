@@ -18,6 +18,7 @@ import (
 type ibltSync struct {
 	*iblt.Table
 	*set.Set
+	additionals   *set.Set
 	FreezeLocal   bool
 	SentBytes     int
 	ReceivedBytes int
@@ -100,6 +101,7 @@ func NewIBLTSetSync(option ...IBLTOption) (genSync.GenSync, error) {
 	return &ibltSync{
 		Table:         iblt.NewTable(uint(tableSize), opt.DataLen, 1, numFxn),
 		Set:           set.New(),
+		additionals:   set.New(),
 		SentBytes:     0,
 		ReceivedBytes: 0,
 		FreezeLocal:   false,
@@ -227,6 +229,9 @@ func (i *ibltSync) SyncClient(ip string, port int) error {
 	if err = client.SendSkipSyncBoolWithInfo(i.FreezeLocal, "Client is freezing local set and skipping set update."); err != nil {
 		return err
 	}
+	if i.FreezeLocal {
+		return nil
+	}
 
 	// Receive differences
 	diffElem, err := client.ReceiveBytesSlice()
@@ -234,6 +239,7 @@ func (i *ibltSync) SyncClient(ip string, port int) error {
 		return err
 	}
 	for _, d := range diffElem {
+		i.additionals.InsertKey(d)
 		if err = i.AddElement(d); err != nil {
 			return err
 		}
@@ -327,6 +333,7 @@ func (i *ibltSync) SyncServer(ip string, port int) error {
 			diffElem = diff.AlphaSlice()
 		}
 		for _, d := range diffElem {
+			i.additionals.InsertKey(d)
 			if err = i.AddElement(d); err != nil {
 				return err
 			}
@@ -374,4 +381,8 @@ func (i *ibltSync) GetReceivedBytes() int {
 
 func (i *ibltSync) GetTotalBytes() int {
 	return i.ReceivedBytes + i.SentBytes
+}
+
+func (i *ibltSync) GetSetAdditions() *set.Set {
+	return i.additionals
 }

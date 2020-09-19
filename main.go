@@ -49,6 +49,8 @@ func main() {
 			fmt.Scan(&key)
 			value := g.Get(key)
 			fmt.Printf("Value of key %v: %v", key, value)
+		case "test":
+			g.Test()
 		default:
 			fmt.Println("Invalid input, try again")
 			help()

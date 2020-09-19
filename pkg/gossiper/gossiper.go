@@ -53,27 +53,27 @@ type heartBeat struct {
 	Time string `json:"time"`
 }
 
-type queue []*logEntry
+type queue []logEntry
 
-func (g *Gossiper) PopLeft() *logEntry {
+func (g *Gossiper) PopLeft() logEntry {
 	if len(g.q) != 0 {
 		res := g.q[0]
 		g.q = g.q[1:]
 		return res
 	} else {
-		return nil
+		return logEntry{}
 	}
 }
 
-func (g *Gossiper) Push(l *logEntry) {
+func (g *Gossiper) Push(l logEntry) {
 	g.q = append(g.q, l)
 }
 
 type logEntry struct {
-	operation int
-	key       string
-	value     string
-	timestamp time.Time
+	Operation int		`json:"operation"`
+	Key       string	`json:"key"`
+	Value     string	`json:"value"`
+	Timestamp time.Time	`json:"timestamp"`
 }
 
 func NewGossiper(name, ip string) *Gossiper {
@@ -295,7 +295,7 @@ func (g *Gossiper) HeartBeatReceiver() {
 }
 
 func (g *Gossiper) SyncClientStart(logEntryNum int) {
-	var logEntriesToCommit []*logEntry
+	var logEntriesToCommit []logEntry
 
 	for i := 0; i < logEntryNum; i++ {
 		logEntryToCommit := g.PopLeft()
@@ -318,9 +318,10 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 				g.logger.Error(g.name + ":Sync error with " + peerName)
 			}
 			wg.Done()
-			s := g.SyncServer.GetLocalSet()
-			for k := range *s {
-				fmt.Println(k.(string))
+			a := g.SyncServer.GetSetAdditions()
+			//s := g.SyncServer.GetLocalSet()
+			for k := range *a {
+				fmt.Printf("%v", []byte(k.(string)))
 			}
 			// TODO add new elements from peers to the queue
 		}()
@@ -354,29 +355,29 @@ func (g *Gossiper) SyncServerStart() {
 		}()
 		wg.Wait()
 		fmt.Println("SyncServer done")
-		s := g.SyncServer.GetLocalSet()
-		for k := range *s {
-			fmt.Println(k)
+		a := g.SyncServer.GetSetAdditions()
+		for k := range *a {
+			l := decodeLogEntry([]byte(k.(string)))
+			fmt.Printf("%v, %v", l.Key, l.Value)
 		}
-
 	}
 }
 
 func (g *Gossiper) Put(key, value string) {
-	entry := &logEntry{
-		operation: PUT,
-		key:       key,
-		value:     value,
-		timestamp: time.Now(),
+	entry := logEntry{
+		Operation: PUT,
+		Key:       key,
+		Value:     value,
+		Timestamp: time.Now(),
 	}
 	g.Push(entry)
 }
 
 func (g *Gossiper) Delete(key string) {
-	entry := &logEntry{
-		operation: DELETE,
-		key:       key,
-		timestamp: time.Now(),
+	entry := logEntry{
+		Operation: DELETE,
+		Key:       key,
+		Timestamp: time.Now(),
 	}
 	g.Push(entry)
 }
@@ -391,7 +392,7 @@ func (g *Gossiper) Get(key string) string {
 	}
 }
 
-func encodeLogEntry(l *logEntry) []byte {
+func encodeLogEntry(l logEntry) []byte {
 	buf, err := json.Marshal(l)
 	if err != nil {
 		fmt.Printf("Encode error: %v", err)
@@ -399,8 +400,8 @@ func encodeLogEntry(l *logEntry) []byte {
 	return buf
 }
 
-func decodeLogEntry(b []byte) *logEntry {
-	l := &logEntry{}
+func decodeLogEntry(b []byte) logEntry {
+	l := logEntry{}
 	if err := json.Unmarshal(b, &l); err != nil {
 		fmt.Printf("Decode error: %v", err)
 	}
@@ -436,4 +437,18 @@ func (g *Gossiper) GetDB() *mydb {
 }
 func (g *Gossiper) GetLogger() *logger {
 	return g.logger
+}
+
+func (g *Gossiper) Test() {
+	l := logEntry{
+		Operation:PUT,
+		Key:"hi",
+		Value:"you",
+		Timestamp:time.Now(),
+	}
+	res := encodeLogEntry(l)
+	fmt.Println(string(res))
+	fmt.Println()
+	newL := decodeLogEntry(res)
+	fmt.Println(newL.Key)
 }
