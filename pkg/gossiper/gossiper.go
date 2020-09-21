@@ -318,6 +318,7 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 
 	for i := 0; i < logEntryNum; i++ {
 		logEntryToCommit := g.PopLeft()
+		fmt.Println("After pop ", len(g.q))
 		// add to commit
 		logEntriesToCommit = append(logEntriesToCommit, logEntryToCommit)
 
@@ -333,31 +334,30 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 		go func() {
 			e := g.SyncServer.SyncClient(peer.ip, SYNC_PORT)
 			if e != nil {
-				fmt.Printf("SyncClient error: %v", e)
 				g.logger.Error(g.name + ":Sync error with " + peerName)
 			}
 			wg.Done()
-			a := g.SyncServer.GetSetAdditions()
-			//s := g.SyncServer.GetLocalSet()
-			for k := range *a {
-				fmt.Printf("%v", []byte(k.(string)))
+			additions := g.SyncServer.GetSetAdditions()
+			for k := range *additions {
+				l := decodeLogEntry([]byte(k.(string)))
+
+				fmt.Println("Got new in SyncClientStart!!", l.Key)
+				g.Push(l)
 			}
-			// TODO add new elements from peers to the queue
 		}()
 	}
 	wg.Wait()
 
-	// TODO commit elements in logEntriesToCommit to localdb
 	for _, entry := range logEntriesToCommit {
-		if entry.operation == PUT {
-			_, e := g.db.Put(entry.key, entry.value)
+		if entry.Operation == PUT {
+			_, e := g.db.Put(entry.Key, entry.Value)
 			if e != nil {
-				g.logger.Error(g.name + "can't put (" + entry.key + "," + entry.value + ") into database")
+				g.logger.Error(g.name + "can't put (" + entry.Key + "," + entry.Value + ") into database")
 			}
-		} else if entry.operation == DELETE { // DELETE
-			_, e := g.db.Delete(entry.key)
+		} else if entry.Operation == DELETE { // DELETE
+			_, e := g.db.Delete(entry.Key)
 			if e != nil {
-				g.logger.Error(g.name + "can't delete" + entry.key + "from database")
+				g.logger.Error(g.name + "can't delete" + entry.Key + "from database")
 			}
 		}
 	}
@@ -368,6 +368,8 @@ func (g *Gossiper) CheckSyncClient() {
 		if len(g.q) >= FIXED_DIFF/2 {
 			g.SyncClientStart(FIXED_DIFF / 2)
 		} else if len(g.q) < FIXED_DIFF/2 && len(g.q) > 0 {
+			fmt.Println(2)
+			fmt.Println(len(g.q))
 			g.SyncClientStart(len(g.q))
 		} else {
 			time.Sleep(time.Second)
@@ -387,11 +389,11 @@ func (g *Gossiper) SyncServerStart() {
 			wg.Done()
 		}()
 		wg.Wait()
-		fmt.Println("SyncServer done")
-		a := g.SyncServer.GetSetAdditions()
-		for k := range *a {
+		additions := g.SyncServer.GetSetAdditions()
+		for k := range *additions {
 			l := decodeLogEntry([]byte(k.(string)))
-			fmt.Printf("%v, %v", l.Key, l.Value)
+			fmt.Printf("I got %v: %v", l.Key, l.Value)
+			g.Push(l)
 		}
 	}
 }
@@ -470,18 +472,4 @@ func (g *Gossiper) GetDB() *mydb {
 }
 func (g *Gossiper) GetLogger() *logger {
 	return g.logger
-}
-
-func (g *Gossiper) Test() {
-	l := logEntry{
-		Operation:PUT,
-		Key:"hi",
-		Value:"you",
-		Timestamp:time.Now(),
-	}
-	res := encodeLogEntry(l)
-	fmt.Println(string(res))
-	fmt.Println()
-	newL := decodeLogEntry(res)
-	fmt.Println(newL.Key)
 }

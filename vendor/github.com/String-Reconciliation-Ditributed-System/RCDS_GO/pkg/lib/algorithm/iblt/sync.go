@@ -141,6 +141,9 @@ func (i *ibltSync) DeleteElement(elem interface{}) error {
 }
 
 func (i *ibltSync) SyncClient(ip string, port int) error {
+	// refresh additionals at each sync session.
+	i.additionals = set.New()
+
 	client, err := genSync.NewTcpConnection(ip, port)
 	if err != nil {
 		return err
@@ -248,6 +251,9 @@ func (i *ibltSync) SyncClient(ip string, port int) error {
 	return nil
 }
 func (i *ibltSync) SyncServer(ip string, port int) error {
+	// refresh additionals at each sync session.
+	i.additionals = set.New()
+
 	server, err := genSync.NewTcpConnection(ip, port)
 	if err != nil {
 		return err
