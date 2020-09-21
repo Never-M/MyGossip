@@ -21,16 +21,33 @@ const (
 	PUT    = 1
 	DELETE = 2
 )
-
-// Time formatter
-var timeFormat = "2006-01-02 15:04:05"
-
 const HEARTBEAT_PORT = ":8002"
 const SYNC_PORT = 8001
 const HEARTBEAT_PATH = "heartbeat"
 const HEARTBEAT_TIMEOUT = 1000
-
 const FIXED_DIFF = 4
+
+// Time formatter
+var timeFormat = "2006-01-02 15:04:05"
+
+type queue []logEntry
+
+type logEntry struct {
+	Operation int       `json:"operation"`
+	Key       string    `json:"key"`
+	Value     string    `json:"value"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type heartBeat struct {
+	Name string `json:"name"`
+	Ip   string `json:"ip"`
+	Time string `json:"time"`
+}
+
+func (hb heartBeat) String() string {
+	return "HeartBeat back from: " + hb.Name + ", at " + hb.Time
+}
 
 type Gossiper struct {
 	name           string
@@ -46,14 +63,6 @@ type Gossiper struct {
 	counter        int
 }
 
-type heartBeat struct {
-	Name string `json:"name"`
-	Ip   string `json:"ip"`
-	Time string `json:"time"`
-}
-
-type queue []logEntry
-
 func (g *Gossiper) PopLeft() logEntry {
 	if len(g.q) != 0 {
 		res := g.q[0]
@@ -66,13 +75,6 @@ func (g *Gossiper) PopLeft() logEntry {
 
 func (g *Gossiper) Push(l logEntry) {
 	g.q = append(g.q, l)
-}
-
-type logEntry struct {
-	Operation int		`json:"operation"`
-	Key       string	`json:"key"`
-	Value     string	`json:"value"`
-	Timestamp time.Time	`json:"timestamp"`
 }
 
 func NewGossiper(name, ip string) *Gossiper {
@@ -313,6 +315,18 @@ func (g *Gossiper) HeartBeatReceiver() {
 	server.ListenAndServe()
 }
 
+func (g *Gossiper) CheckSyncClient() {
+	for {
+		if len(g.q) >= FIXED_DIFF/2 {
+			g.SyncClientStart(FIXED_DIFF / 2)
+		} else if len(g.q) < FIXED_DIFF/2 && len(g.q) > 0 {
+			g.SyncClientStart(len(g.q))
+		} else {
+			time.Sleep(time.Second)
+		}
+	}
+}
+
 func (g *Gossiper) SyncClientStart(logEntryNum int) {
 	var logEntriesToCommit []logEntry
 
@@ -363,20 +377,6 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 	}
 }
 
-func (g *Gossiper) CheckSyncClient() {
-	for {
-		if len(g.q) >= FIXED_DIFF/2 {
-			g.SyncClientStart(FIXED_DIFF / 2)
-		} else if len(g.q) < FIXED_DIFF/2 && len(g.q) > 0 {
-			fmt.Println(2)
-			fmt.Println(len(g.q))
-			g.SyncClientStart(len(g.q))
-		} else {
-			time.Sleep(time.Second)
-		}
-	}
-}
-
 func (g *Gossiper) SyncServerStart() {
 	for {
 		var wg sync.WaitGroup
@@ -392,7 +392,7 @@ func (g *Gossiper) SyncServerStart() {
 		additions := g.SyncServer.GetSetAdditions()
 		for k := range *additions {
 			l := decodeLogEntry([]byte(k.(string)))
-			fmt.Printf("I got %v: %v", l.Key, l.Value)
+			//fmt.Printf("I got %v: %v", l.Key, l.Value)
 			g.Push(l)
 		}
 	}
@@ -441,10 +441,6 @@ func decodeLogEntry(b []byte) logEntry {
 		fmt.Printf("Decode error: %v", err)
 	}
 	return l
-}
-
-func (hb heartBeat) String() string {
-	return "HeartBeat back from: " + hb.Name + ", at " + hb.Time
 }
 
 func (g *Gossiper) GetName() string {
