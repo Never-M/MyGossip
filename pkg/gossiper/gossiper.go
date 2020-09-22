@@ -45,6 +45,11 @@ type heartBeat struct {
 	Time string `json:"time"`
 }
 
+type peerTime struct {
+	Name	string
+	t 		time.Time
+}
+
 func (hb heartBeat) String() string {
 	return "HeartBeat back from: " + hb.Name + ", at " + hb.Time
 }
@@ -56,6 +61,7 @@ type Gossiper struct {
 	heartbeatTimer *time.Timer
 	terminateChan  chan int
 	q              queue
+	removePeerQ    []peerTime
 	SyncServer     genSync.GenSync
 	pointer        int
 	db             *mydb
@@ -82,26 +88,14 @@ func NewGossiper(name, ip string) *Gossiper {
 	logger := Newlogger()
 	logger.SaveToFile(filepath.Join("/tmp/", name, "/log"))
 	if err != nil {
-		fmt.Println(err)
 		logger.Fatal("create database Failed", "gossiper", "NewGossiper")
 	}
 	peers := make(map[string]*peer)
 
-	//check if file exsit
-	f, err := os.Open(filepath.Join("/tmp/", name, "/peers.csv"))
-	f.Close()
-	//if err == nil {
-	//	//exsit!
-	//	peerPairSlice := ReadPeersFromFile(name)
-	//	if len(peerPairSlice) > 0 {
-	//		for _, item := range peerPairSlice {
-	//			peers[item.Name] = NewPeer(item.Name, item.IP)
-	//		}
-	//	}
-	//}
 	// new Iblt
 	SyncServer, err := iblt.NewIBLTSetSync(iblt.WithSymmetricSetDiff(FIXED_DIFF))
-	return &Gossiper{
+
+	g := &Gossiper{
 		name:          name,
 		ip:            ip,
 		peers:         peers,
@@ -111,6 +105,21 @@ func NewGossiper(name, ip string) *Gossiper {
 		SyncServer:    SyncServer,
 		counter:       0,
 	}
+
+	//check if file exsit
+	f, err := os.Open(filepath.Join("/tmp/", name, "/peers.csv"))
+	f.Close()
+	if err == nil {
+		//exsit!
+		peerPairSlice := ReadPeersFromFile(name)
+		if len(peerPairSlice) > 0 {
+			for _, item := range peerPairSlice {
+				g.AddPeer(NewPeer(item.Name, item.IP))
+			}
+		}
+	}
+
+	return g
 }
 
 type PeerPair struct {
@@ -187,6 +196,7 @@ func (g *Gossiper) Start() {
 }
 
 func (g *Gossiper) Stop() {
+	// TODO maybe add a waitgroup to wait channel signal to send
 	g.terminateChan <- 1
 }
 
@@ -233,17 +243,18 @@ func (g *Gossiper) AddPeer(p *peer) int {
 func (g *Gossiper) RemovePeer(name string) int {
 	delete(g.peers, name)
 	g.logger.Info(name + " removed from " + g.name)
+	g.removePeerQ = append(g.removePeerQ, peerTime{name, time.Now()})
 	return types.SUCCEED
 }
 
 func (g *Gossiper) PrintPeerNames() {
 	if len(g.peers) == 0 {
-		fmt.Printf("%v has no peer")
+		fmt.Printf(">> %v has no peer\n", g.name)
 		return
 	}
-	fmt.Printf("Peers of %v are:", g.name)
+	fmt.Printf(">> Peers of %v:\n", g.name)
 	for name, _ := range g.peers {
-		fmt.Print(name + " ")
+		fmt.Println(">> " + name)
 	}
 }
 
@@ -260,8 +271,25 @@ func (g *Gossiper) HeartBeatHandler(w http.ResponseWriter, r *http.Request) {
 	g.logger.Info(g.name + " receive heartbeat from " + hb.Name)
 	// check node in the peers list or not
 	if _, ok := g.peers[hb.Name]; !ok {
-		g.AddPeer(NewPeer(hb.Name, hb.Ip))
-		g.logger.Info("Receive heartbeat from unknown node " + hb.Name + ", added to peerlist")
+		if len(g.removePeerQ) != 0 {
+			for g.removePeerQ[0].t.Add(time.Second).Before(time.Now()) {
+				g.removePeerQ = g.removePeerQ[1:]
+				if len(g.removePeerQ) == 0 {
+					break
+				}
+			}
+		}
+		flag := true
+		for _, item := range g.removePeerQ {
+			if item.Name == hb.Name {
+				flag = false
+				break
+			}
+		}
+		if flag {
+			g.AddPeer(NewPeer(hb.Name, hb.Ip))
+			g.logger.Info("Receive heartbeat from unknown node " + hb.Name + ", added to peerlist")
+		}
 	} else {
 		g.peers[hb.Name].timer.Reset(2 * HEARTBEAT_TIMEOUT * time.Millisecond)
 		g.logger.Info(hb.Name + " timer reset")
@@ -332,7 +360,6 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 
 	for i := 0; i < logEntryNum; i++ {
 		logEntryToCommit := g.PopLeft()
-		fmt.Println("After pop ", len(g.q))
 		// add to commit
 		logEntriesToCommit = append(logEntriesToCommit, logEntryToCommit)
 
@@ -354,8 +381,6 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 			additions := g.SyncServer.GetSetAdditions()
 			for k := range *additions {
 				l := decodeLogEntry([]byte(k.(string)))
-
-				fmt.Println("Got new in SyncClientStart!!", l.Key)
 				g.Push(l)
 			}
 		}()
@@ -384,7 +409,7 @@ func (g *Gossiper) SyncServerStart() {
 		go func() {
 			err := g.SyncServer.SyncServer(g.ip, SYNC_PORT)
 			if err != nil {
-				fmt.Println(err)
+				g.logger.Error(err.Error())
 			}
 			wg.Done()
 		}()
@@ -392,7 +417,6 @@ func (g *Gossiper) SyncServerStart() {
 		additions := g.SyncServer.GetSetAdditions()
 		for k := range *additions {
 			l := decodeLogEntry([]byte(k.(string)))
-			//fmt.Printf("I got %v: %v", l.Key, l.Value)
 			g.Push(l)
 		}
 	}
@@ -430,7 +454,7 @@ func (g *Gossiper) Get(key string) string {
 func encodeLogEntry(l logEntry) []byte {
 	buf, err := json.Marshal(l)
 	if err != nil {
-		fmt.Printf("Encode error: %v", err)
+		fmt.Printf(">> Encode error: %v\n", err)
 	}
 	return buf
 }
@@ -438,7 +462,7 @@ func encodeLogEntry(l logEntry) []byte {
 func decodeLogEntry(b []byte) logEntry {
 	l := logEntry{}
 	if err := json.Unmarshal(b, &l); err != nil {
-		fmt.Printf("Decode error: %v", err)
+		fmt.Printf(">> Decode error: %v\n", err)
 	}
 	return l
 }
