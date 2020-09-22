@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	gp "github.com/Never-M/MyGossip/pkg/gossiper"
+	"github.com/sirupsen/logrus"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -14,6 +17,12 @@ func main() {
 	fmt.Scan(&ip)
 	g := gp.NewGossiper(name, ip)
 	g.Start()
+	filename := filepath.Join("/tmp/", name, "/ibltlog")
+	f, err := os.OpenFile(filename, os.O_WRONLY | os.O_CREATE, 0755)
+	if err != nil {
+		fmt.Println("Internel error! try again!")
+	}
+	logrus.SetOutput(f)
 	for {
 		fmt.Println()
 		fmt.Print("[" + g.GetName() + "]" + ": ")
