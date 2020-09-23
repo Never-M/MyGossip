@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	PUT    = 1
-	DELETE = 2
+	PUT    = "PUT"
+	DELETE = "DELETE"
 )
 const HEARTBEAT_PORT = ":8002"
 const SYNC_PORT = 8001
@@ -33,10 +33,10 @@ var timeFormat = "2006-01-02 15:04:05"
 type queue []logEntry
 
 type logEntry struct {
-	Operation int       `json:"operation"`
+	Operation string    `json:"operation"`
 	Key       string    `json:"key"`
 	Value     string    `json:"value"`
-	Timestamp time.Time `json:"timestamp"`
+	Timestamp string    `json:"timestamp"`
 }
 
 type heartBeat struct {
@@ -67,6 +67,8 @@ type Gossiper struct {
 	db             *mydb
 	logger         *logger
 	counter        int
+	logFile        *os.File
+	writer         *csv.Writer
 }
 
 func (g *Gossiper) PopLeft() logEntry {
@@ -84,6 +86,13 @@ func (g *Gossiper) Push(l logEntry) {
 }
 
 func NewGossiper(name, ip string) *Gossiper {
+	logFile, err := os.OpenFile(filepath.Join("/tmp/", name, "/logs.csv"), os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		fmt.Printf("can not create log file, err %+v\n", err)
+	}
+	w := csv.NewWriter(logFile)
+	w.Comma = ','
+	w.UseCRLF = true
 	_, db, err := Newdb(filepath.Join("/tmp/", name, "/database"))
 	logger := Newlogger()
 	logger.SaveToFile(filepath.Join("/tmp/", name, "/log"))
@@ -104,6 +113,8 @@ func NewGossiper(name, ip string) *Gossiper {
 		logger:        logger,
 		SyncServer:    SyncServer,
 		counter:       0,
+		logFile:       logFile,
+		writer:         w,
 	}
 
 	//check if file exsit
@@ -144,10 +155,33 @@ func (g *Gossiper) WritePeersToFile() {
 		line := []string{pair.Name, pair.IP}
 		err = writer.Write(line)
 		if err != nil {
-			g.logger.Panic("Write Failed -- <err>: ")
+			g.logger.Panic("Write peers Failed -- <err>: ", err.Error())
 		}
 	}
 	writer.Flush()
+}
+
+func (g *Gossiper) WriteLogToFile(l logEntry) {
+	line := []string{l.Timestamp, l.Operation, l.Key, l.Value}
+	err := g.writer.Write(line)
+	if err != nil {
+		g.logger.Error("Write log Failed -- <err>: ", err.Error())
+	}
+	g.writer.Flush()
+}
+
+func (g *Gossiper) ReadLogsFromFile() []logEntry {
+	reader := csv.NewReader(g.logFile)
+	reader.FieldsPerRecord = -1
+	record, err := reader.ReadAll()
+	if err != nil {
+		g.logger.Error("Failed to read csv")
+	}
+	var logs []logEntry
+	for _, item := range record {
+		logs = append(logs, logEntry{Timestamp: item[0], Operation: item[1], Key: item[2], Value: item[3]})
+	}
+	return logs
 }
 
 func ReadPeersFromFile(name string) []PeerPair {
@@ -162,7 +196,7 @@ func ReadPeersFromFile(name string) []PeerPair {
 	reader.FieldsPerRecord = -1
 	record, err := reader.ReadAll()
 	if err != nil {
-		logger.Panic("Failed to read csv")
+		logger.Panic("Failed to read peers")
 	}
 	var peerPairSlice []PeerPair
 	for _, item := range record {
@@ -188,6 +222,7 @@ func (g *Gossiper) Start() {
 			case <-g.terminateChan:
 				// save neighbors to a file
 				g.WritePeersToFile()
+				g.logFile.Close()
 				g.logger.Info(g.name + " stopped")
 				break
 			}
@@ -207,25 +242,6 @@ func (g *Gossiper) AddPeer(p *peer) int {
 	g.peers[p.name] = p
 	g.logger.Info("New peer " + p.name + " joined " + g.name)
 
-	// sync with new peer
-	/*
-		var localToSyncEntries []*logEntry
-		_, pairs, err := g.db.ListData()
-		if err != nil {
-			g.logger.Error(g.name + "can't get data from db")
-		}
-		for _, pair := range pairs {
-			entry := &logEntry{
-				operation: PUT,
-				key:       pair.key,
-				value:     pair.val,
-				timestamp: time.Now(),
-			}
-			localToSyncEntries = append(localToSyncEntries, entry)
-		}
-	*/
-	// will queue is a parameter of sync.
-
 	go func() {
 		for {
 			select {
@@ -237,6 +253,29 @@ func (g *Gossiper) AddPeer(p *peer) int {
 			}
 		}
 	}()
+
+	// sync with new peer
+	logs := g.ReadLogsFromFile()
+
+	dict := map[string]logEntry
+	for log := range logs {
+
+	}
+	var localToSyncEntries []logEntry
+	_, pairs, err := g.db.ListData()
+	if err != nil {
+		g.logger.Error(g.name + "can't get data from db")
+	}
+	for _, pair := range pairs {
+		entry := &logEntry{
+			operation: PUT,
+			key:       pair.key,
+			value:     pair.val,
+			timestamp: time.Now(),
+		}
+		localToSyncEntries = append(localToSyncEntries, entry)
+	}
+
 	return types.SUCCEED
 }
 
@@ -381,6 +420,7 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 			additions := g.SyncServer.GetSetAdditions()
 			for k := range *additions {
 				l := decodeLogEntry([]byte(k.(string)))
+
 				g.Push(l)
 			}
 		}()
@@ -388,6 +428,7 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 	wg.Wait()
 
 	for _, entry := range logEntriesToCommit {
+		g.WriteLogToFile(entry)
 		if entry.Operation == PUT {
 			_, e := g.db.Put(entry.Key, entry.Value)
 			if e != nil {
@@ -417,6 +458,7 @@ func (g *Gossiper) SyncServerStart() {
 		additions := g.SyncServer.GetSetAdditions()
 		for k := range *additions {
 			l := decodeLogEntry([]byte(k.(string)))
+
 			g.Push(l)
 		}
 	}
@@ -427,7 +469,7 @@ func (g *Gossiper) Put(key, value string) {
 		Operation: PUT,
 		Key:       key,
 		Value:     value,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(timeFormat),
 	}
 	g.Push(entry)
 }
@@ -436,7 +478,7 @@ func (g *Gossiper) Delete(key string) {
 	entry := logEntry{
 		Operation: DELETE,
 		Key:       key,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(timeFormat),
 	}
 	g.Push(entry)
 }
