@@ -33,10 +33,10 @@ var timeFormat = "2006-01-02 15:04:05"
 type queue []logEntry
 
 type logEntry struct {
-	Operation string    `json:"operation"`
-	Key       string    `json:"key"`
-	Value     string    `json:"value"`
-	Timestamp string    `json:"timestamp"`
+	Operation string `json:"operation"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	Timestamp string `json:"timestamp"`
 }
 
 type heartBeat struct {
@@ -46,8 +46,8 @@ type heartBeat struct {
 }
 
 type peerTime struct {
-	Name	string
-	t 		time.Time
+	Name string
+	t    time.Time
 }
 
 func (hb heartBeat) String() string {
@@ -68,6 +68,7 @@ type Gossiper struct {
 	logger         *logger
 	counter        int
 	logFile        *os.File
+	checkLog       map[string]logEntry
 	writer         *csv.Writer
 }
 
@@ -114,7 +115,7 @@ func NewGossiper(name, ip string) *Gossiper {
 		SyncServer:    SyncServer,
 		counter:       0,
 		logFile:       logFile,
-		writer:         w,
+		writer:        w,
 	}
 
 	//check if file exsit
@@ -128,6 +129,11 @@ func NewGossiper(name, ip string) *Gossiper {
 				g.AddPeer(NewPeer(item.Name, item.IP))
 			}
 		}
+	}
+
+	//read log to fill myc
+	for _, logEntry := range g.ReadLogsFromFile() {
+		g.checkLog[logEntry.Key] = logEntry
 	}
 
 	return g
@@ -254,27 +260,27 @@ func (g *Gossiper) AddPeer(p *peer) int {
 		}
 	}()
 
-	// sync with new peer
+	// sync with new peer myc
 	logs := g.ReadLogsFromFile()
-
-	dict := map[string]logEntry
-	for log := range logs {
-
+	for _, log := range logs {
+		g.Push(log)
 	}
-	var localToSyncEntries []logEntry
-	_, pairs, err := g.db.ListData()
-	if err != nil {
-		g.logger.Error(g.name + "can't get data from db")
-	}
-	for _, pair := range pairs {
-		entry := &logEntry{
-			operation: PUT,
-			key:       pair.key,
-			value:     pair.val,
-			timestamp: time.Now(),
+	/*
+		var localToSyncEntries []*logEntry
+		_, pairs, err := g.db.ListData()
+		if err != nil {
+			g.logger.Error(g.name + "can't get data from db")
 		}
-		localToSyncEntries = append(localToSyncEntries, entry)
-	}
+		for _, pair := range pairs {
+			entry := &logEntry{
+				Operation: PUT,
+				Key:       pair.key,
+				Value:     pair.val,
+				Timestamp: time.Now().String(),
+			}
+			localToSyncEntries = append(localToSyncEntries, entry)
+		}
+	*/
 
 	return types.SUCCEED
 }
@@ -419,9 +425,16 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 			wg.Done()
 			additions := g.SyncServer.GetSetAdditions()
 			for k := range *additions {
+				//myc
 				l := decodeLogEntry([]byte(k.(string)))
-
-				g.Push(l)
+				_, ok := g.checkLog[l.Key]
+				if ok {
+					if l.Timestamp > g.checkLog[l.Key].Timestamp {
+						g.Push(l)
+					}
+				} else {
+					g.Push(l)
+				}
 			}
 		}()
 	}
@@ -458,8 +471,15 @@ func (g *Gossiper) SyncServerStart() {
 		additions := g.SyncServer.GetSetAdditions()
 		for k := range *additions {
 			l := decodeLogEntry([]byte(k.(string)))
-
-			g.Push(l)
+			//myc
+			_, ok := g.checkLog[l.Key]
+			if ok {
+				if l.Timestamp > g.checkLog[l.Key].Timestamp {
+					g.Push(l)
+				}
+			} else {
+				g.Push(l)
+			}
 		}
 	}
 }
