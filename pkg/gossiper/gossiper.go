@@ -66,10 +66,7 @@ type Gossiper struct {
 	pointer        int
 	db             *mydb
 	logger         *logger
-	counter        int
-	logFile        *os.File
 	checkLog       map[string]logEntry
-	writer         *csv.Writer
 }
 
 func (g *Gossiper) PopLeft() logEntry {
@@ -87,13 +84,6 @@ func (g *Gossiper) Push(l logEntry) {
 }
 
 func NewGossiper(name, ip string) *Gossiper {
-	logFile, err := os.OpenFile(filepath.Join("/tmp/", name, "/logs.csv"), os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		fmt.Printf("can not create log file, err %+v\n", err)
-	}
-	w := csv.NewWriter(logFile)
-	w.Comma = ','
-	w.UseCRLF = true
 	_, db, err := Newdb(filepath.Join("/tmp/", name, "/database"))
 	logger := Newlogger()
 	logger.SaveToFile(filepath.Join("/tmp/", name, "/log"))
@@ -113,9 +103,7 @@ func NewGossiper(name, ip string) *Gossiper {
 		db:            db,
 		logger:        logger,
 		SyncServer:    SyncServer,
-		counter:       0,
-		logFile:       logFile,
-		writer:        w,
+		checkLog:      make(map[string]logEntry),
 	}
 
 	//check if file exsit
@@ -130,11 +118,7 @@ func NewGossiper(name, ip string) *Gossiper {
 			}
 		}
 	}
-
-	//read log to fill myc
-	for _, logEntry := range g.ReadLogsFromFile() {
-		g.checkLog[logEntry.Key] = logEntry
-	}
+	g.ReadLogsFromFile()
 
 	return g
 }
@@ -167,27 +151,40 @@ func (g *Gossiper) WritePeersToFile() {
 	writer.Flush()
 }
 
-func (g *Gossiper) WriteLogToFile(l logEntry) {
-	line := []string{l.Timestamp, l.Operation, l.Key, l.Value}
-	err := g.writer.Write(line)
+func (g *Gossiper) WriteLogToFile() {
+	logFile, err := os.Create(filepath.Join("/tmp/", g.name, "/logs.csv"))
 	if err != nil {
-		g.logger.Error("Write log Failed -- <err>: ", err.Error())
+		fmt.Printf("can not create log file, err %+v\n", err)
 	}
-	g.writer.Flush()
+	w := csv.NewWriter(logFile)
+	w.Comma = ','
+	w.UseCRLF = true
+	for _, l := range g.checkLog {
+		line := []string{l.Timestamp, l.Operation, l.Key, l.Value}
+		err := w.Write(line)
+		if err != nil {
+			g.logger.Error("Write log Failed -- <err>: ", err.Error())
+		}
+		w.Flush()
+	}
+	logFile.Close()
 }
 
-func (g *Gossiper) ReadLogsFromFile() []logEntry {
-	reader := csv.NewReader(g.logFile)
-	reader.FieldsPerRecord = -1
+func (g *Gossiper) ReadLogsFromFile() {
+	logFile, err := os.Open(filepath.Join("/tmp/", g.name, "/logs.csv"))
+	if err != nil {
+		fmt.Printf("Open log file for read err %+v\n", err)
+	}
+	defer logFile.Close()
+	reader := csv.NewReader(logFile)
 	record, err := reader.ReadAll()
 	if err != nil {
+		fmt.Printf("ReadLogsFromFile err: %v\n", err)
 		g.logger.Error("Failed to read csv")
 	}
-	var logs []logEntry
 	for _, item := range record {
-		logs = append(logs, logEntry{Timestamp: item[0], Operation: item[1], Key: item[2], Value: item[3]})
+		g.checkLog[item[2]] = logEntry{Timestamp: item[0], Operation: item[1], Key: item[2], Value: item[3]}
 	}
-	return logs
 }
 
 func ReadPeersFromFile(name string) []PeerPair {
@@ -228,7 +225,7 @@ func (g *Gossiper) Start() {
 			case <-g.terminateChan:
 				// save neighbors to a file
 				g.WritePeersToFile()
-				g.logFile.Close()
+				g.WriteLogToFile()
 				g.logger.Info(g.name + " stopped")
 				break
 			}
@@ -252,7 +249,6 @@ func (g *Gossiper) AddPeer(p *peer) int {
 		for {
 			select {
 			case <-p.timer.C:
-
 				g.RemovePeer(p.name)
 				g.logger.Info("Peer " + p.name + " of " + g.name + " removed")
 				break
@@ -261,26 +257,9 @@ func (g *Gossiper) AddPeer(p *peer) int {
 	}()
 
 	// sync with new peer myc
-	logs := g.ReadLogsFromFile()
-	for _, log := range logs {
+	for _, log := range g.checkLog {
 		g.Push(log)
 	}
-	/*
-		var localToSyncEntries []*logEntry
-		_, pairs, err := g.db.ListData()
-		if err != nil {
-			g.logger.Error(g.name + "can't get data from db")
-		}
-		for _, pair := range pairs {
-			entry := &logEntry{
-				Operation: PUT,
-				Key:       pair.key,
-				Value:     pair.val,
-				Timestamp: time.Now().String(),
-			}
-			localToSyncEntries = append(localToSyncEntries, entry)
-		}
-	*/
 
 	return types.SUCCEED
 }
@@ -441,7 +420,8 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 	wg.Wait()
 
 	for _, entry := range logEntriesToCommit {
-		g.WriteLogToFile(entry)
+		//wfy
+		g.checkLog[entry.Key] = entry
 		if entry.Operation == PUT {
 			_, e := g.db.Put(entry.Key, entry.Value)
 			if e != nil {
@@ -480,6 +460,8 @@ func (g *Gossiper) SyncServerStart() {
 			} else {
 				g.Push(l)
 			}
+			//wfy
+			//g.checkLog[l.Key] = l
 		}
 	}
 }
