@@ -1,6 +1,7 @@
 package gossiper
 
 import (
+	"fmt"
 	. "github.com/Never-M/MyGossip/pkg/types"
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -67,6 +68,7 @@ func (d *mydb) ListData() (int, []pair, error) {
 	for iter.Next() {
 		key := string(iter.Key())
 		value := string(iter.Value())
+		fmt.Println(key + " " + value)
 		ans = append(ans, pair{key: key, val: value})
 	}
 	iter.Release()

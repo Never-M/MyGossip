@@ -70,6 +70,8 @@ func main() {
 			fmt.Scan(&key)
 			g.Delete(key)
 			fmt.Println(">> Key [" + key + "] deleted!")
+		case "list":
+			g.GetDB().ListData()
 		default:
 			fmt.Println(">> Invalid input, try again")
 			help()

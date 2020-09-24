@@ -25,7 +25,7 @@ const HEARTBEAT_PORT = ":8002"
 const SYNC_PORT = 8001
 const HEARTBEAT_PATH = "heartbeat"
 const HEARTBEAT_TIMEOUT = 1000
-const FIXED_DIFF = 4
+const FIXED_DIFF = 400
 
 // Time formatter
 var timeFormat = "2006-01-02 15:04:05"
@@ -256,10 +256,11 @@ func (g *Gossiper) AddPeer(p *peer) int {
 		}
 	}()
 
-	// sync with new peer myc
-	for _, log := range g.checkLog {
-		g.Push(log)
-	}
+	//// sync with new peer myc
+	//for _, log := range g.checkLog {
+	//	g.Push(log)
+	//}
+	g.SyncClientStart(0)
 
 	return types.SUCCEED
 }
@@ -384,6 +385,7 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 
 	for i := 0; i < logEntryNum; i++ {
 		logEntryToCommit := g.PopLeft()
+		fmt.Println("LogEntryToCommit" + logEntryToCommit.Key)
 		// add to commit
 		logEntriesToCommit = append(logEntriesToCommit, logEntryToCommit)
 
@@ -403,9 +405,12 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 			}
 			wg.Done()
 			additions := g.SyncServer.GetSetAdditions()
+			println("client")
+			println(len(*additions))
 			for k := range *additions {
 				//myc
 				l := decodeLogEntry([]byte(k.(string)))
+				fmt.Println(l.Key)
 				_, ok := g.checkLog[l.Key]
 				if ok {
 					if l.Timestamp > g.checkLog[l.Key].Timestamp {
@@ -449,8 +454,11 @@ func (g *Gossiper) SyncServerStart() {
 		}()
 		wg.Wait()
 		additions := g.SyncServer.GetSetAdditions()
+		fmt.Println("server")
+		fmt.Println(len(*additions))
 		for k := range *additions {
 			l := decodeLogEntry([]byte(k.(string)))
+			fmt.Println(l.Key)
 			//myc
 			_, ok := g.checkLog[l.Key]
 			if ok {
