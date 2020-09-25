@@ -18,14 +18,14 @@ import (
 )
 
 const (
-	PUT    = 1
-	DELETE = 2
+	PUT    = "PUT"
+	DELETE = "DELETE"
 )
 const HEARTBEAT_PORT = ":8002"
 const SYNC_PORT = 8001
 const HEARTBEAT_PATH = "heartbeat"
 const HEARTBEAT_TIMEOUT = 1000
-const FIXED_DIFF = 4
+const FIXED_DIFF = 400
 
 // Time formatter
 var timeFormat = "2006-01-02 15:04:05"
@@ -33,10 +33,10 @@ var timeFormat = "2006-01-02 15:04:05"
 type queue []logEntry
 
 type logEntry struct {
-	Operation int       `json:"operation"`
-	Key       string    `json:"key"`
-	Value     string    `json:"value"`
-	Timestamp time.Time `json:"timestamp"`
+	Operation string `json:"operation"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	Timestamp string `json:"timestamp"`
 }
 
 type heartBeat struct {
@@ -46,8 +46,8 @@ type heartBeat struct {
 }
 
 type peerTime struct {
-	Name	string
-	t 		time.Time
+	Name string
+	t    time.Time
 }
 
 func (hb heartBeat) String() string {
@@ -66,7 +66,7 @@ type Gossiper struct {
 	pointer        int
 	db             *mydb
 	logger         *logger
-	counter        int
+	checkLog       map[string]logEntry
 }
 
 func (g *Gossiper) PopLeft() logEntry {
@@ -103,7 +103,7 @@ func NewGossiper(name, ip string) *Gossiper {
 		db:            db,
 		logger:        logger,
 		SyncServer:    SyncServer,
-		counter:       0,
+		checkLog:      make(map[string]logEntry),
 	}
 
 	//check if file exsit
@@ -118,6 +118,7 @@ func NewGossiper(name, ip string) *Gossiper {
 			}
 		}
 	}
+	g.ReadLogsFromFile()
 
 	return g
 }
@@ -144,10 +145,46 @@ func (g *Gossiper) WritePeersToFile() {
 		line := []string{pair.Name, pair.IP}
 		err = writer.Write(line)
 		if err != nil {
-			g.logger.Panic("Write Failed -- <err>: ")
+			g.logger.Panic("Write peers Failed -- <err>: ", err.Error())
 		}
 	}
 	writer.Flush()
+}
+
+func (g *Gossiper) WriteLogToFile() {
+	logFile, err := os.Create(filepath.Join("/tmp/", g.name, "/logs.csv"))
+	if err != nil {
+		fmt.Printf("can not create log file, err %+v\n", err)
+	}
+	w := csv.NewWriter(logFile)
+	w.Comma = ','
+	w.UseCRLF = true
+	for _, l := range g.checkLog {
+		line := []string{l.Timestamp, l.Operation, l.Key, l.Value}
+		err := w.Write(line)
+		if err != nil {
+			g.logger.Error("Write log Failed -- <err>: ", err.Error())
+		}
+		w.Flush()
+	}
+	logFile.Close()
+}
+
+func (g *Gossiper) ReadLogsFromFile() {
+	logFile, err := os.Open(filepath.Join("/tmp/", g.name, "/logs.csv"))
+	if err != nil {
+		fmt.Printf("Open log file for read err %+v\n", err)
+	}
+	defer logFile.Close()
+	reader := csv.NewReader(logFile)
+	record, err := reader.ReadAll()
+	if err != nil {
+		fmt.Printf("ReadLogsFromFile err: %v\n", err)
+		g.logger.Error("Failed to read csv")
+	}
+	for _, item := range record {
+		g.checkLog[item[2]] = logEntry{Timestamp: item[0], Operation: item[1], Key: item[2], Value: item[3]}
+	}
 }
 
 func ReadPeersFromFile(name string) []PeerPair {
@@ -162,7 +199,7 @@ func ReadPeersFromFile(name string) []PeerPair {
 	reader.FieldsPerRecord = -1
 	record, err := reader.ReadAll()
 	if err != nil {
-		logger.Panic("Failed to read csv")
+		logger.Panic("Failed to read peers")
 	}
 	var peerPairSlice []PeerPair
 	for _, item := range record {
@@ -188,6 +225,7 @@ func (g *Gossiper) Start() {
 			case <-g.terminateChan:
 				// save neighbors to a file
 				g.WritePeersToFile()
+				g.WriteLogToFile()
 				g.logger.Info(g.name + " stopped")
 				break
 			}
@@ -207,36 +245,23 @@ func (g *Gossiper) AddPeer(p *peer) int {
 	g.peers[p.name] = p
 	g.logger.Info("New peer " + p.name + " joined " + g.name)
 
-	// sync with new peer
-	/*
-		var localToSyncEntries []*logEntry
-		_, pairs, err := g.db.ListData()
-		if err != nil {
-			g.logger.Error(g.name + "can't get data from db")
-		}
-		for _, pair := range pairs {
-			entry := &logEntry{
-				operation: PUT,
-				key:       pair.key,
-				value:     pair.val,
-				timestamp: time.Now(),
-			}
-			localToSyncEntries = append(localToSyncEntries, entry)
-		}
-	*/
-	// will queue is a parameter of sync.
-
 	go func() {
 		for {
 			select {
 			case <-p.timer.C:
-
 				g.RemovePeer(p.name)
 				g.logger.Info("Peer " + p.name + " of " + g.name + " removed")
 				break
 			}
 		}
 	}()
+
+	//// sync with new peer myc
+	//for _, log := range g.checkLog {
+	//	g.Push(log)
+	//}
+	g.SyncClientStart(0)
+
 	return types.SUCCEED
 }
 
@@ -360,6 +385,7 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 
 	for i := 0; i < logEntryNum; i++ {
 		logEntryToCommit := g.PopLeft()
+		fmt.Println("LogEntryToCommit" + logEntryToCommit.Key)
 		// add to commit
 		logEntriesToCommit = append(logEntriesToCommit, logEntryToCommit)
 
@@ -379,15 +405,28 @@ func (g *Gossiper) SyncClientStart(logEntryNum int) {
 			}
 			wg.Done()
 			additions := g.SyncServer.GetSetAdditions()
+			println("client")
+			println(len(*additions))
 			for k := range *additions {
+				//myc
 				l := decodeLogEntry([]byte(k.(string)))
-				g.Push(l)
+				fmt.Println(l.Key)
+				_, ok := g.checkLog[l.Key]
+				if ok {
+					if l.Timestamp > g.checkLog[l.Key].Timestamp {
+						g.Push(l)
+					}
+				} else {
+					g.Push(l)
+				}
 			}
 		}()
 	}
 	wg.Wait()
 
 	for _, entry := range logEntriesToCommit {
+		//wfy
+		g.checkLog[entry.Key] = entry
 		if entry.Operation == PUT {
 			_, e := g.db.Put(entry.Key, entry.Value)
 			if e != nil {
@@ -415,9 +454,22 @@ func (g *Gossiper) SyncServerStart() {
 		}()
 		wg.Wait()
 		additions := g.SyncServer.GetSetAdditions()
+		fmt.Println("server")
+		fmt.Println(len(*additions))
 		for k := range *additions {
 			l := decodeLogEntry([]byte(k.(string)))
-			g.Push(l)
+			fmt.Println(l.Key)
+			//myc
+			_, ok := g.checkLog[l.Key]
+			if ok {
+				if l.Timestamp > g.checkLog[l.Key].Timestamp {
+					g.Push(l)
+				}
+			} else {
+				g.Push(l)
+			}
+			//wfy
+			//g.checkLog[l.Key] = l
 		}
 	}
 }
@@ -427,7 +479,7 @@ func (g *Gossiper) Put(key, value string) {
 		Operation: PUT,
 		Key:       key,
 		Value:     value,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(timeFormat),
 	}
 	g.Push(entry)
 }
@@ -436,7 +488,7 @@ func (g *Gossiper) Delete(key string) {
 	entry := logEntry{
 		Operation: DELETE,
 		Key:       key,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(timeFormat),
 	}
 	g.Push(entry)
 }

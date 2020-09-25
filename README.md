@@ -70,5 +70,5 @@ We introduce a distributed database that is adaptable to systems with low networ
   >> delete: delete a key from the database
   ```
 
-  
+![](https://ibb.co/ZMRVMyF)
 
